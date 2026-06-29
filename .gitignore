@@ -1,0 +1,29 @@
+# Keel workspace data belongs in end-user repos, not the tool source tree.
+.keel/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+build/
+.venv/
+venv/
+
+# Frontend (added in later work packages)
+frontend/node_modules/
+keel/static/
+
+# Test / tooling
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Editor
+.idea/
+.vscode/
+*.swp
+.DS_Store
