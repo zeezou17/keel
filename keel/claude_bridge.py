@@ -49,6 +49,43 @@ class KeelClaudeOutputError(KeelClaudeError):
     """Raised when CLI output cannot be parsed or validated."""
 
 
+def verify_claude_cli(cwd: Path | None = None) -> None:
+    """
+    Verify the Claude Code CLI is installed and authenticated.
+
+    Raises KeelClaudeNotFoundError, KeelClaudeAuthError, or KeelClaudeRateLimitError on failure.
+    """
+    if shutil.which(CLAUDE_BINARY) is None:
+        raise KeelClaudeNotFoundError(
+            "The Claude Code CLI (`claude`) was not found on PATH. "
+            "Install it from https://code.claude.com/docs/en/setup and authenticate."
+        )
+
+    try:
+        completed = subprocess.run(
+            [CLAUDE_BINARY, "-p", "Reply ok", "--output-format", "json"],
+            capture_output=True,
+            text=True,
+            cwd=str(cwd) if cwd is not None else None,
+            timeout=60,
+            check=False,
+        )
+    except FileNotFoundError as exc:
+        raise KeelClaudeNotFoundError(
+            "The Claude Code CLI (`claude`) was not found on PATH. "
+            "Install it from https://code.claude.com/docs/en/setup and authenticate."
+        ) from exc
+    except subprocess.SubprocessError as exc:
+        raise KeelClaudeError(f"Claude Code CLI subprocess failed: {exc}") from exc
+
+    if completed.returncode != 0 or _envelope_indicates_error(completed.stdout):
+        _raise_cli_failure(
+            completed.stdout,
+            _combined_cli_output(completed),
+            completed.returncode,
+        )
+
+
 def run_claude(
     prompt: str,
     output_schema: type[BaseModel] | None = None,
