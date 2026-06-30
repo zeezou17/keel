@@ -11,6 +11,8 @@ export interface KeelNode {
   technology?: string | null;
   position_x?: number | null;
   position_y?: number | null;
+  req_ids?: string[];
+  adr_ids?: string[];
 }
 
 export interface KeelEdge {
@@ -245,5 +247,29 @@ export function updateCharacteristic(characteristic: Characteristic) {
   return request<Characteristic>(`/api/characteristics/${encodeURIComponent(characteristic.id)}`, {
     method: "PUT",
     body: JSON.stringify(characteristic),
+  });
+}
+
+export interface WorkPackage {
+  id: string;
+  title: string;
+  status: "todo" | "in_progress" | "blocked" | "done";
+  linked_node_id: string;
+  linked_req_ids: string[];
+  linked_adr_ids: string[];
+  acceptance_criteria: string[];
+  dependencies: string[];
+}
+
+export interface GeneratedWorkPackage {
+  work_package: WorkPackage;
+  body: string;
+  path: string;
+}
+
+export function generateWorkPackage(nodeId: string, requirementIds: string[] = []) {
+  return request<GeneratedWorkPackage>("/api/generate-work-package", {
+    method: "POST",
+    body: JSON.stringify({ node_id: nodeId, requirement_ids: requirementIds }),
   });
 }

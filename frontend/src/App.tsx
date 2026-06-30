@@ -12,6 +12,7 @@ import {
   type Requirement,
 } from "./api/client";
 import { Canvas } from "./components/Canvas";
+import { NodeDetailPanel } from "./components/NodeDetailPanel";
 import { Sidebar } from "./components/Sidebar";
 import { SparringPanel } from "./components/SparringPanel";
 
@@ -40,6 +41,7 @@ export default function App() {
   const [sparCollapsed, setSparCollapsed] = useState(false);
   const [selectedRequirementId, setSelectedRequirementId] = useState<string | null>(null);
   const [highlightedNodeIds, setHighlightedNodeIds] = useState<string[]>([]);
+  const [selectedNode, setSelectedNode] = useState<KeelNode | null>(null);
 
   const breadcrumbs = useMemo(() => {
     const items: ViewState[] = [{ level: 1, label: "C1 Context" }];
@@ -59,6 +61,7 @@ export default function App() {
       const data = await fetchArchitecture(nextView.level, nextView.containerId);
       setArchitecture(data);
       setView(nextView);
+      setSelectedNode(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load architecture");
     } finally {
@@ -191,8 +194,20 @@ export default function App() {
           <Canvas
             architecture={architecture}
             highlightedNodeIds={highlightedNodeIds}
+            selectedNodeId={selectedNode?.id ?? null}
             onArchitectureChange={(next) => void persistArchitecture(next)}
+            onNodeSelect={setSelectedNode}
             onNodeOpen={(node) => void handleNodeOpen(node)}
+          />
+          <NodeDetailPanel
+            node={selectedNode}
+            canDrillDown={
+              (view.level === 1 && selectedNode?.type === "system") ||
+              (view.level === 2 && selectedNode?.type === "container")
+            }
+            onDrillDown={(node) => void handleNodeOpen(node)}
+            onClose={() => setSelectedNode(null)}
+            onGenerated={() => void refreshGitStatus()}
           />
         </main>
         <SparringPanel

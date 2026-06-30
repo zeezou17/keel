@@ -42,8 +42,15 @@ from keel.document_store import (
     save_requirement,
 )
 from keel.git_utils import KeelGitError, commit_keel_changes, keel_status, open_repo
-from keel.schema import ADR, ADRStatus, ArchitectureFile, Characteristic, FitnessFunction, KeelNode, NodeLevel, NodeType, Priority, Requirement, ReqStatus
+from keel.schema import ADR, ADRStatus, ArchitectureFile, Characteristic, FitnessFunction, KeelNode, NodeLevel, NodeType, Priority, Requirement, ReqStatus, WorkPackage
 from keel.spar import SparRequest, SparResponse, run_spar
+from keel.work_packages import (
+    GenerateWorkPackageRequest,
+    GeneratedWorkPackage,
+    WorkPackageGenerationError,
+    generate_work_package,
+    list_work_packages,
+)
 
 STATIC_DIR = Path(__file__).parent / "static"
 KEEL_REPO_ROOT_ENV = "KEEL_REPO_ROOT"
@@ -397,6 +404,27 @@ def create_app() -> FastAPI:
             return assess_impact(root, request.requirement_id)
         except DocumentNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except KeelClaudeError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    @app.get("/api/work-packages")
+    def get_work_packages() -> list[dict[str, object]]:
+        root = get_repo_root()
+        return [
+            {
+                "work_package": wp.model_dump(mode="json"),
+                "body": body,
+            }
+            for wp, body in list_work_packages(root)
+        ]
+
+    @app.post("/api/generate-work-package")
+    def post_generate_work_package(request: GenerateWorkPackageRequest) -> GeneratedWorkPackage:
+        root = get_repo_root()
+        try:
+            return generate_work_package(root, request)
+        except WorkPackageGenerationError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         except KeelClaudeError as exc:
             raise HTTPException(status_code=502, detail=str(exc)) from exc
 
