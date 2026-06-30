@@ -6,9 +6,9 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   pull-requests: write
-  statuses: write
+  checks: write
 
 jobs:
   drift:
@@ -25,8 +25,7 @@ jobs:
       - name: Install Keel
         run: pip install keel
 
-      - name: Run drift check
+      - name: Run Keel drift check
+        uses: ./.github/actions/keel-drift
         env:
           CLAUDE_CODE_TOKEN: ${{ secrets.CLAUDE_CODE_TOKEN }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: python -m keel.action.drift_check

@@ -107,7 +107,8 @@ def test_run_init_writes_architecture_and_commits(
     assert (git_repo / "CLAUDE.md").exists()
     assert (git_repo / ".cursorrules").exists()
     assert (git_repo / ".github/workflows/keel-drift.yml").exists()
-    assert len(written) == 5
+    assert (git_repo / ".github/actions/keel-drift/action.yml").exists()
+    assert len(written) == 6
 
     c1 = json.loads((git_repo / ".keel/architecture/c1-context.json").read_text())
     ArchitectureFile.model_validate(c1)
