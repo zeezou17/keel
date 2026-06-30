@@ -128,3 +128,122 @@ export function spar(message: string, level: number, containerId?: string | null
     }),
   });
 }
+
+export type ReqStatus = "draft" | "approved" | "implemented";
+export type ADRStatus = "proposed" | "accepted" | "deprecated" | "superseded";
+export type Priority = "high" | "medium" | "low";
+
+export interface Requirement {
+  id: string;
+  title: string;
+  status: ReqStatus;
+  linked_node_ids: string[];
+  acceptance_criteria: string[];
+  body: string;
+}
+
+export interface ADR {
+  id: string;
+  title: string;
+  status: ADRStatus;
+  linked_node_ids: string[];
+  linked_characteristic_ids: string[];
+  body: string;
+}
+
+export interface Characteristic {
+  id: string;
+  name: string;
+  priority: Priority;
+  scenario: string;
+  fitness_function?: { type: string; ref: string } | null;
+  linked_node_ids: string[];
+}
+
+export interface ImpactItem {
+  node_id: string;
+  reason: string;
+}
+
+export interface AssessImpactResult {
+  impacts: ImpactItem[];
+}
+
+export function fetchNodes() {
+  return request<KeelNode[]>("/api/nodes");
+}
+
+export function fetchRequirements() {
+  return request<Requirement[]>("/api/requirements");
+}
+
+export function createRequirement(title: string, description = "") {
+  return request<Requirement>("/api/requirements", {
+    method: "POST",
+    body: JSON.stringify({ title, description }),
+  });
+}
+
+export function updateRequirement(requirement: Requirement) {
+  return request<Requirement>(`/api/requirements/${encodeURIComponent(requirement.id)}`, {
+    method: "PUT",
+    body: JSON.stringify({
+      title: requirement.title,
+      status: requirement.status,
+      linked_node_ids: requirement.linked_node_ids,
+      acceptance_criteria: requirement.acceptance_criteria,
+      body: requirement.body,
+    }),
+  });
+}
+
+export function assessImpact(requirementId: string) {
+  return request<AssessImpactResult>("/api/assess-impact", {
+    method: "POST",
+    body: JSON.stringify({ requirement_id: requirementId }),
+  });
+}
+
+export function fetchAdrs() {
+  return request<ADR[]>("/api/adrs");
+}
+
+export function createAdr(title: string) {
+  return request<ADR>("/api/adrs", {
+    method: "POST",
+    body: JSON.stringify({ title }),
+  });
+}
+
+export function updateAdr(adr: ADR) {
+  return request<ADR>(`/api/adrs/${encodeURIComponent(adr.id)}`, {
+    method: "PUT",
+    body: JSON.stringify({
+      title: adr.title,
+      status: adr.status,
+      linked_node_ids: adr.linked_node_ids,
+      linked_characteristic_ids: adr.linked_characteristic_ids,
+      body: adr.body,
+    }),
+  });
+}
+
+export function fetchCharacteristics() {
+  return request<Characteristic[]>("/api/characteristics");
+}
+
+export function createCharacteristic(
+  characteristic: Omit<Characteristic, "id">,
+) {
+  return request<Characteristic>("/api/characteristics", {
+    method: "POST",
+    body: JSON.stringify(characteristic),
+  });
+}
+
+export function updateCharacteristic(characteristic: Characteristic) {
+  return request<Characteristic>(`/api/characteristics/${encodeURIComponent(characteristic.id)}`, {
+    method: "PUT",
+    body: JSON.stringify(characteristic),
+  });
+}

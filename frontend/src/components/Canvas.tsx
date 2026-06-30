@@ -27,7 +27,7 @@ function defaultPosition(index: number): { x: number; y: number } {
   return { x: 120 + column * 220, y: 100 + row * 140 };
 }
 
-function toFlowNode(node: KeelNode, index: number): Node {
+function toFlowNode(node: KeelNode, index: number, highlighted: boolean): Node {
   const position =
     node.position_x != null && node.position_y != null
       ? { x: node.position_x, y: node.position_y }
@@ -43,11 +43,12 @@ function toFlowNode(node: KeelNode, index: number): Node {
       raw: node,
     },
     style: {
-      border: `2px solid ${NODE_COLORS[node.type]}`,
+      border: `3px solid ${highlighted ? "#f9c74f" : NODE_COLORS[node.type]}`,
       borderRadius: 10,
       padding: 10,
-      background: "#ffffff",
+      background: highlighted ? "#fff8e6" : "#ffffff",
       width: 180,
+      boxShadow: highlighted ? "0 0 0 3px rgba(249, 199, 79, 0.35)" : undefined,
     },
   };
 }
@@ -63,21 +64,33 @@ function toFlowEdge(edge: ArchitectureFile["edges"][number]): Edge {
 
 interface CanvasProps {
   architecture: ArchitectureFile;
+  highlightedNodeIds?: string[];
   onArchitectureChange: (architecture: ArchitectureFile) => void;
   onNodeOpen?: (node: KeelNode) => void;
 }
 
-export function Canvas({ architecture, onArchitectureChange, onNodeOpen }: CanvasProps) {
+export function Canvas({
+  architecture,
+  highlightedNodeIds = [],
+  onArchitectureChange,
+  onNodeOpen,
+}: CanvasProps) {
+  const highlightSet = useMemo(() => new Set(highlightedNodeIds), [highlightedNodeIds]);
   const initialNodes = useMemo(
-    () => architecture.nodes.map((node, index) => toFlowNode(node, index)),
-    [architecture],
+    () =>
+      architecture.nodes.map((node, index) => toFlowNode(node, index, highlightSet.has(node.id))),
+    [architecture, highlightSet],
   );
   const [nodes, setNodes] = useState<Node[]>(initialNodes);
   const edges = useMemo(() => architecture.edges.map(toFlowEdge), [architecture.edges]);
 
   useEffect(() => {
-    setNodes(architecture.nodes.map((node, index) => toFlowNode(node, index)));
-  }, [architecture]);
+    setNodes(
+      architecture.nodes.map((node, index) =>
+        toFlowNode(node, index, highlightSet.has(node.id)),
+      ),
+    );
+  }, [architecture, highlightSet]);
 
   const persistPositions = useCallback(
     (nextNodes: Node[]) => {

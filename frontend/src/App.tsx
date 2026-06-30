@@ -9,8 +9,10 @@ import {
   type ArchitectureFile,
   type KeelNode,
   type NodeType,
+  type Requirement,
 } from "./api/client";
 import { Canvas } from "./components/Canvas";
+import { Sidebar } from "./components/Sidebar";
 import { SparringPanel } from "./components/SparringPanel";
 
 type ViewState = {
@@ -36,6 +38,8 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [sparCollapsed, setSparCollapsed] = useState(false);
+  const [selectedRequirementId, setSelectedRequirementId] = useState<string | null>(null);
+  const [highlightedNodeIds, setHighlightedNodeIds] = useState<string[]>([]);
 
   const breadcrumbs = useMemo(() => {
     const items: ViewState[] = [{ level: 1, label: "C1 Context" }];
@@ -132,6 +136,11 @@ export default function App() {
     await refreshGitStatus();
   }, [architecture, refreshGitStatus, view.containerId, view.level]);
 
+  const reloadArchitecture = useCallback(async () => {
+    const data = await fetchArchitecture(view.level, view.containerId);
+    setArchitecture(data);
+  }, [view.containerId, view.level]);
+
   const handleCommit = useCallback(async () => {
     await commitChanges();
     await refreshGitStatus();
@@ -170,9 +179,18 @@ export default function App() {
       </header>
       {error ? <div className="error-banner">{error}</div> : null}
       <div className="workspace">
+        <Sidebar
+          selectedRequirementId={selectedRequirementId}
+          onRequirementSelect={(requirement: Requirement | null, nodeIds: string[]) => {
+            setSelectedRequirementId(requirement?.id ?? null);
+            setHighlightedNodeIds(nodeIds);
+          }}
+          onArchitectureRefresh={() => void reloadArchitecture()}
+        />
         <main className="canvas-panel">
           <Canvas
             architecture={architecture}
+            highlightedNodeIds={highlightedNodeIds}
             onArchitectureChange={(next) => void persistArchitecture(next)}
             onNodeOpen={(node) => void handleNodeOpen(node)}
           />
