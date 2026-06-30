@@ -65,21 +65,33 @@ function toFlowEdge(edge: ArchitectureFile["edges"][number]): Edge {
 interface CanvasProps {
   architecture: ArchitectureFile;
   highlightedNodeIds?: string[];
+  selectedNodeId?: string | null;
   onArchitectureChange: (architecture: ArchitectureFile) => void;
+  onNodeSelect?: (node: KeelNode) => void;
   onNodeOpen?: (node: KeelNode) => void;
 }
 
 export function Canvas({
   architecture,
   highlightedNodeIds = [],
+  selectedNodeId = null,
   onArchitectureChange,
+  onNodeSelect,
   onNodeOpen,
 }: CanvasProps) {
   const highlightSet = useMemo(() => new Set(highlightedNodeIds), [highlightedNodeIds]);
+
+  const isEmphasized = useCallback(
+    (nodeId: string) => highlightSet.has(nodeId) || nodeId === selectedNodeId,
+    [highlightSet, selectedNodeId],
+  );
+
   const initialNodes = useMemo(
     () =>
-      architecture.nodes.map((node, index) => toFlowNode(node, index, highlightSet.has(node.id))),
-    [architecture, highlightSet],
+      architecture.nodes.map((node, index) =>
+        toFlowNode(node, index, isEmphasized(node.id)),
+      ),
+    [architecture, isEmphasized],
   );
   const [nodes, setNodes] = useState<Node[]>(initialNodes);
   const edges = useMemo(() => architecture.edges.map(toFlowEdge), [architecture.edges]);
@@ -87,10 +99,10 @@ export function Canvas({
   useEffect(() => {
     setNodes(
       architecture.nodes.map((node, index) =>
-        toFlowNode(node, index, highlightSet.has(node.id)),
+        toFlowNode(node, index, isEmphasized(node.id)),
       ),
     );
-  }, [architecture, highlightSet]);
+  }, [architecture, isEmphasized]);
 
   const persistPositions = useCallback(
     (nextNodes: Node[]) => {
@@ -132,6 +144,14 @@ export function Canvas({
   const onNodeClick = useCallback(
     (_event: React.MouseEvent, flowNode: Node) => {
       const raw = flowNode.data.raw as KeelNode;
+      onNodeSelect?.(raw);
+    },
+    [onNodeSelect],
+  );
+
+  const onNodeDoubleClick = useCallback(
+    (_event: React.MouseEvent, flowNode: Node) => {
+      const raw = flowNode.data.raw as KeelNode;
       onNodeOpen?.(raw);
     },
     [onNodeOpen],
@@ -144,6 +164,7 @@ export function Canvas({
         edges={edges}
         onNodesChange={onNodesChange}
         onNodeClick={onNodeClick}
+        onNodeDoubleClick={onNodeDoubleClick}
         fitView
       >
         <Background />
