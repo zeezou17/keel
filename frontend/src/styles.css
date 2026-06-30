@@ -1,0 +1,67 @@
+:root {
+  color: #102a43;
+  background: #f0f4f8;
+  font-family: Inter, system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+.app-shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+  background: #102a43;
+  color: #f0f4f8;
+}
+
+.breadcrumbs {
+  display: flex;
+  gap: 0.25rem;
+  flex-wrap: wrap;
+}
+
+.breadcrumb,
+.toolbar button {
+  border: 0;
+  background: #243b53;
+  color: inherit;
+  border-radius: 6px;
+  padding: 0.45rem 0.75rem;
+  cursor: pointer;
+}
+
+.toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.dirty-indicator {
+  color: #f9c74f;
+  font-weight: 600;
+}
+
+.error-banner {
+  background: #ff595e;
+  color: white;
+  padding: 0.5rem 1rem;
+}
+
+.canvas-panel {
+  flex: 1;
+  min-height: 0;
+}

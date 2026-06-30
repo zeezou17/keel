@@ -70,6 +70,8 @@ class KeelNode(BaseModel):
     technology: Optional[str] = None
     req_ids: list[str] = Field(default_factory=list)
     adr_ids: list[str] = Field(default_factory=list)
+    position_x: Optional[float] = None
+    position_y: Optional[float] = None
     created_at: datetime.datetime = Field(default_factory=datetime.datetime.utcnow)
     last_verified_at: datetime.datetime = Field(default_factory=datetime.datetime.utcnow)
 

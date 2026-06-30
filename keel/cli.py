@@ -1,11 +1,17 @@
 """Typer CLI entry point for Keel."""
 
+import os
+import threading
+import time
+import webbrowser
 from pathlib import Path
 from typing import Optional
 
 import typer
+import uvicorn
 
 from keel.init_cmd import print_success_summary, run_init
+from keel.server import KEEL_REPO_ROOT_ENV
 
 app = typer.Typer(
     name="keel",
@@ -50,5 +56,40 @@ def init(
     print_success_summary(written, root)
 
 
+@app.command()
+def dev(
+    path: Optional[Path] = typer.Option(
+        None,
+        "--path",
+        "-p",
+        help="Repository path containing .keel/ (defaults to current directory).",
+        exists=True,
+        file_okay=False,
+        dir_okay=True,
+        resolve_path=True,
+    ),
+    port: int = typer.Option(3141, help="Port for the local dev server."),
+    no_browser: bool = typer.Option(False, "--no-browser", help="Do not open a browser tab."),
+) -> None:
+    """Start the Keel dev server and open the architecture canvas."""
+    root = (path or Path.cwd()).resolve()
+    if not (root / ".keel").exists():
+        raise typer.Exit("No .keel/ workspace found. Run `keel init` first.")
+
+    os.environ[KEEL_REPO_ROOT_ENV] = str(root)
+    url = f"http://127.0.0.1:{port}"
+
+    if not no_browser:
+        def _open_browser() -> None:
+            time.sleep(0.8)
+            webbrowser.open(url)
+
+        threading.Thread(target=_open_browser, daemon=True).start()
+
+    typer.echo(f"Keel dev server running at {url}")
+    uvicorn.run("keel.server:app", host="127.0.0.1", port=port, log_level="info")
+
+
 if __name__ == "__main__":
     app()
+

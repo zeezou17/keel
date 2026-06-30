@@ -41,3 +41,27 @@ def commit_paths(repo: Repo, paths: list[Path], message: str) -> str:
     repo.index.add(relative_paths)
     commit = repo.index.commit(message)
     return commit.hexsha
+
+
+def keel_status(repo: Repo) -> dict[str, object]:
+    """Return git status for the `.keel/` directory."""
+    root = repo_root(repo)
+    keel_rel = ".keel"
+    porcelain = repo.git.status("--porcelain", keel_rel).splitlines()
+    changed = [line[3:] for line in porcelain if len(line) > 3]
+    return {
+        "dirty": bool(porcelain),
+        "changed_files": changed,
+    }
+
+
+def commit_keel_changes(repo: Repo, message: str = "chore: update keel architecture") -> str:
+    """Stage all `.keel/` changes and create a commit."""
+    status = keel_status(repo)
+    if not status["dirty"]:
+        raise KeelGitError("No uncommitted changes under .keel/.")
+
+    repo.index.add([".keel"])
+    commit = repo.index.commit(message)
+    return commit.hexsha
+
