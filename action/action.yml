@@ -1,0 +1,17 @@
+name: Keel Drift Check
+description: Run Keel architecture drift detection for a pull request
+inputs:
+  required:
+    description: Set to true to fail the check when drift is detected
+    required: false
+    default: "false"
+runs:
+  using: composite
+  steps:
+    - name: Run drift check
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+        CLAUDE_CODE_TOKEN: ${{ env.CLAUDE_CODE_TOKEN }}
+        KEEL_DRIFT_REQUIRED: ${{ inputs.required }}
+      run: python -m keel.action.drift_check

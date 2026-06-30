@@ -88,6 +88,7 @@ def run_init(
         written.extend(_write_architecture(root, bundle))
         written.extend(_write_agent_files(root))
         written.append(_write_workflow(root))
+        written.append(_write_github_action(root))
     except (ValidationError, OSError) as exc:
         raise typer.Exit(f"Failed to write Keel files: {exc}") from exc
 
@@ -198,6 +199,14 @@ def _write_workflow(root: Path) -> Path:
     workflow_dest.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(workflow_src, workflow_dest)
     return workflow_dest
+
+
+def _write_github_action(root: Path) -> Path:
+    action_src = TEMPLATES_DIR / "github-action" / "action.yml"
+    action_dest = root / ".github" / "actions" / "keel-drift" / "action.yml"
+    action_dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(action_src, action_dest)
+    return action_dest
 
 
 def _load_template(name: str) -> Template:
