@@ -21,8 +21,10 @@ from keel.architecture_store import (
     save_architecture,
     update_node,
 )
+from keel.claude_bridge import KeelClaudeError
 from keel.git_utils import KeelGitError, commit_keel_changes, keel_status, open_repo
 from keel.schema import ArchitectureFile, KeelNode, NodeLevel, NodeType
+from keel.spar import SparRequest, SparResponse, run_spar
 
 STATIC_DIR = Path(__file__).parent / "static"
 KEEL_REPO_ROOT_ENV = "KEEL_REPO_ROOT"
@@ -124,6 +126,14 @@ def create_app() -> FastAPI:
         except KeelGitError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {"commit": commit_sha}
+
+    @app.post("/api/spar")
+    def spar(request: SparRequest) -> SparResponse:
+        root = get_repo_root()
+        try:
+            return run_spar(root, request)
+        except KeelClaudeError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     @app.get("/")
     def index() -> FileResponse:

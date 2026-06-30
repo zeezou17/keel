@@ -11,6 +11,7 @@ import {
   type NodeType,
 } from "./api/client";
 import { Canvas } from "./components/Canvas";
+import { SparringPanel } from "./components/SparringPanel";
 
 type ViewState = {
   level: number;
@@ -34,6 +35,7 @@ export default function App() {
   const [dirty, setDirty] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [sparCollapsed, setSparCollapsed] = useState(false);
 
   const breadcrumbs = useMemo(() => {
     const items: ViewState[] = [{ level: 1, label: "C1 Context" }];
@@ -167,13 +169,25 @@ export default function App() {
         </div>
       </header>
       {error ? <div className="error-banner">{error}</div> : null}
-      <main className="canvas-panel">
-        <Canvas
-          architecture={architecture}
-          onArchitectureChange={(next) => void persistArchitecture(next)}
-          onNodeOpen={(node) => void handleNodeOpen(node)}
+      <div className="workspace">
+        <main className="canvas-panel">
+          <Canvas
+            architecture={architecture}
+            onArchitectureChange={(next) => void persistArchitecture(next)}
+            onNodeOpen={(node) => void handleNodeOpen(node)}
+          />
+        </main>
+        <SparringPanel
+          level={view.level}
+          containerId={view.containerId}
+          collapsed={sparCollapsed}
+          onToggleCollapsed={() => setSparCollapsed((value) => !value)}
+          onArchitectureUpdated={(updated) => {
+            setArchitecture(updated);
+            void refreshGitStatus();
+          }}
         />
-      </main>
+      </div>
     </div>
   );
 }

@@ -34,14 +34,44 @@ export interface GitStatus {
   changed_files: string[];
 }
 
+export interface SparAction {
+  type: "add_node";
+  label: string;
+  level: number;
+  container_id?: string | null;
+  node: KeelNode;
+}
+
+export interface SparResult {
+  reply: string;
+  actions: SparAction[];
+}
+
+export interface SparMessage {
+  id: string;
+  role: "user" | "assistant" | "error";
+  content: string;
+  actions?: SparAction[];
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
     headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
     ...init,
   });
   if (!response.ok) {
-    const detail = await response.text();
-    throw new Error(detail || response.statusText);
+    const raw = await response.text();
+    try {
+      const payload = JSON.parse(raw) as { detail?: string };
+      if (typeof payload.detail === "string") {
+        throw new Error(payload.detail);
+      }
+    } catch (error) {
+      if (error instanceof Error && error.message !== raw) {
+        throw error;
+      }
+    }
+    throw new Error(raw || response.statusText);
   }
   return response.json() as Promise<T>;
 }
@@ -85,5 +115,16 @@ export function commitChanges(message = "chore: update keel architecture") {
   return request<{ commit: string }>("/api/commit", {
     method: "POST",
     body: JSON.stringify({ message }),
+  });
+}
+
+export function spar(message: string, level: number, containerId?: string | null) {
+  return request<SparResult>("/api/spar", {
+    method: "POST",
+    body: JSON.stringify({
+      message,
+      level,
+      container_id: containerId ?? null,
+    }),
   });
 }
