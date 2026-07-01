@@ -182,8 +182,11 @@ def test_run_claude_raises_output_error_for_schema_validation_failure(
         stderr="",
     )
 
-    with pytest.raises(KeelClaudeOutputError, match="schema validation"):
+    with pytest.raises(KeelClaudeOutputError, match="schema validation") as exc_info:
         run_claude("prompt", output_schema=SampleSchema)
+
+    assert exc_info.value.validation_errors
+    assert exc_info.value.raw_payload == {"wrong_field": "value"}
 
 
 @patch("keel.claude_bridge.shutil.which", return_value="/usr/bin/claude")
