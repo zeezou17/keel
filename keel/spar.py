@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from enum import Enum
 from pathlib import Path
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -31,10 +32,16 @@ class SparResponse(BaseModel):
     actions: list[SparAction] = Field(default_factory=list)
 
 
+class SparHistoryMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1)
+
+
 class SparRequest(BaseModel):
     message: str = Field(min_length=1)
     level: int = Field(ge=1, le=3)
     container_id: str | None = None
+    history: list[SparHistoryMessage] = Field(default_factory=list)
 
 
 def gather_architecture_context(root: Path, level: int, container_id: str | None) -> dict[str, object]:
@@ -58,7 +65,7 @@ def gather_architecture_context(root: Path, level: int, container_id: str | None
 
 def run_spar(root: Path, request: SparRequest) -> SparResponse:
     context = gather_architecture_context(root, request.level, request.container_id)
-    prompt = _build_spar_prompt(request.message, context)
+    prompt = _build_spar_prompt(request.message, context, request.history)
 
     result = run_claude(prompt, output_schema=SparResponse, cwd=root)
     if isinstance(result, SparResponse):
@@ -68,8 +75,19 @@ def run_spar(root: Path, request: SparRequest) -> SparResponse:
     raise KeelClaudeError("Unexpected response type from Claude Code.")
 
 
-def _build_spar_prompt(message: str, context: dict[str, object]) -> str:
+def _build_spar_prompt(
+    message: str,
+    context: dict[str, object],
+    history: list[SparHistoryMessage],
+) -> str:
     context_json = json.dumps(context, indent=2)
+    history_block = ""
+    if history:
+        lines = [
+            f"{'User' if item.role == 'user' else 'Assistant'}: {item.content}"
+            for item in history
+        ]
+        history_block = "Conversation so far:\n" + "\n".join(lines) + "\n\n"
     return f"""You are an architecture sparring partner for a Keel C4 workspace.
 
 Current architecture context (JSON):
@@ -77,7 +95,7 @@ Current architecture context (JSON):
 
 The user is viewing C{context["view_level"]} in the canvas.
 
-User message:
+{history_block}User message:
 {message}
 
 Respond with JSON only using this schema:

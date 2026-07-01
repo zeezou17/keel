@@ -108,6 +108,34 @@ def test_spar_claude_failure_returns_502(
 
 
 @patch("keel.spar.run_claude")
+def test_spar_includes_conversation_history_in_prompt(
+    mock_run_claude: object,
+    client: TestClient,
+    repo_with_architecture: Path,
+) -> None:
+    mock_run_claude.return_value = SparResponse(reply="Follow-up guidance.", actions=[])
+
+    response = client.post(
+        "/api/spar",
+        json={
+            "message": "What about Redis?",
+            "level": 1,
+            "history": [
+                {"role": "user", "content": "Should we add a cache?"},
+                {"role": "assistant", "content": "A cache container would help."},
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    prompt = mock_run_claude.call_args[0][0]
+    assert "Conversation so far:" in prompt
+    assert "Should we add a cache?" in prompt
+    assert "A cache container would help." in prompt
+    assert "What about Redis?" in prompt
+
+
+@patch("keel.spar.run_claude")
 def test_spar_action_applied_via_create_node_endpoint(
     mock_run_claude: object,
     client: TestClient,

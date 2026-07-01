@@ -56,6 +56,11 @@ export interface SparMessage {
   actions?: SparAction[];
 }
 
+export interface SparHistoryMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
     headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
@@ -120,13 +125,19 @@ export function commitChanges(message = "chore: update keel architecture") {
   });
 }
 
-export function spar(message: string, level: number, containerId?: string | null) {
+export function spar(
+  message: string,
+  level: number,
+  containerId?: string | null,
+  history: SparHistoryMessage[] = [],
+) {
   return request<SparResult>("/api/spar", {
     method: "POST",
     body: JSON.stringify({
       message,
       level,
       container_id: containerId ?? null,
+      history,
     }),
   });
 }
