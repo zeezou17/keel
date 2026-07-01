@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   createNode,
@@ -27,6 +27,13 @@ export function SparringPanel({
   const [messages, setMessages] = useState<SparMessage[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!collapsed) {
+      inputRef.current?.focus();
+    }
+  }, [collapsed]);
 
   const sendMessage = async () => {
     const trimmed = input.trim();
@@ -141,15 +148,17 @@ export function SparringPanel({
           event.preventDefault();
           void sendMessage();
         }}
+        onKeyDown={(event) => event.stopPropagation()}
       >
         <input
+          ref={inputRef}
           value={input}
           onChange={(event) => setInput(event.target.value)}
           placeholder="Ask an architecture question…"
-          disabled={loading}
+          aria-label="Sparring message"
         />
         <button type="submit" disabled={loading || !input.trim()}>
-          Send
+          {loading ? "Waiting…" : "Send"}
         </button>
       </form>
     </aside>

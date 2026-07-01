@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -13,6 +14,28 @@ from pydantic import BaseModel, ValidationError
 
 CLAUDE_BINARY = "claude"
 DEFAULT_TIMEOUT_SECONDS = 300
+
+
+def _subprocess_kwargs(cwd: Path | None) -> dict[str, object]:
+    """
+    Build kwargs for non-interactive Claude CLI subprocess calls.
+
+    Detach from the controlling terminal so keystrokes typed in the `keel dev`
+    shell are not delivered to the child process, and force plain-text output
+    instead of TTY-aware streaming to the server terminal.
+    """
+    env = os.environ.copy()
+    env.setdefault("CI", "true")
+    env.setdefault("NO_COLOR", "1")
+    env.setdefault("TERM", "dumb")
+    return {
+        "capture_output": True,
+        "text": True,
+        "cwd": str(cwd) if cwd is not None else None,
+        "stdin": subprocess.DEVNULL,
+        "start_new_session": True,
+        "env": env,
+    }
 
 _AUTH_PATTERNS = (
     "not authenticated",
@@ -77,11 +100,9 @@ def verify_claude_cli(cwd: Path | None = None) -> None:
     try:
         completed = subprocess.run(
             [CLAUDE_BINARY, "-p", "Reply ok", "--output-format", "json"],
-            capture_output=True,
-            text=True,
-            cwd=str(cwd) if cwd is not None else None,
             timeout=60,
             check=False,
+            **_subprocess_kwargs(cwd),
         )
     except FileNotFoundError as exc:
         raise KeelClaudeNotFoundError(
@@ -120,11 +141,9 @@ def run_claude(
     try:
         completed = subprocess.run(
             command,
-            capture_output=True,
-            text=True,
-            cwd=str(cwd) if cwd is not None else None,
             timeout=DEFAULT_TIMEOUT_SECONDS,
             check=False,
+            **_subprocess_kwargs(cwd),
         )
     except FileNotFoundError as exc:
         raise KeelClaudeNotFoundError(
