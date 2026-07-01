@@ -1,9 +1,33 @@
-"""
-Subprocess wrapper for the Claude Code CLI.
+"""Subprocess wrapper for the Claude Code CLI.
 
 All AI features (init, sparring, impact assessment, drift, work packages) call
-`claude -p ... --output-format json` through this module rather than talking
+``claude -p ... --output-format json`` through this module rather than talking
 to an HTTP API directly.
+
+This module provides:
+    - Pre-flight verification of Claude CLI availability and auth
+    - Structured JSON output parsing with Pydantic validation
+    - Error handling for auth failures, rate limits, and malformed output
+
+Example:
+    Running a simple Claude prompt::
+
+        from keel.claude_bridge import run_claude
+
+        result = run_claude("Describe a REST API design for user management")
+        print(result.get("result"))
+
+    Running with schema validation::
+
+        from pydantic import BaseModel
+        from keel.claude_bridge import run_claude
+
+        class DesignResponse(BaseModel):
+            endpoints: list[str]
+            description: str
+
+        response = run_claude("Design a REST API...", output_schema=DesignResponse)
+        print(response.endpoints)
 """
 
 from __future__ import annotations
@@ -23,12 +47,17 @@ DEFAULT_TIMEOUT_SECONDS = 300
 
 
 def _subprocess_kwargs(cwd: Path | None) -> dict[str, object]:
-    """
-    Build kwargs for non-interactive Claude CLI subprocess calls.
+    """Build kwargs for non-interactive Claude CLI subprocess calls.
 
-    Detach from the controlling terminal so keystrokes typed in the `keel dev`
-    shell are not delivered to the child process, and force plain-text output
-    instead of TTY-aware streaming to the server terminal.
+    Configures the subprocess to run detached from the controlling terminal,
+    preventing keystrokes from interfering with the child process. Also forces
+    plain-text output instead of TTY-aware streaming.
+
+    Args:
+        cwd: Working directory for the subprocess, or None for current directory.
+
+    Returns:
+        Dictionary of keyword arguments for ``subprocess.run()``.
     """
     env = os.environ.copy()
     env.setdefault("CI", "true")
@@ -63,23 +92,48 @@ _RATE_LIMIT_PATTERNS = (
 
 
 class KeelClaudeError(Exception):
-    """Base error for Claude Code CLI integration."""
+    """Base error for Claude Code CLI integration.
+
+    All Claude-related errors inherit from this class, making it easy
+    to catch any Claude CLI issue with a single except clause.
+    """
 
 
 class KeelClaudeNotFoundError(KeelClaudeError):
-    """Raised when the `claude` binary is not available on PATH."""
+    """Raised when the ``claude`` binary is not available on PATH.
+
+    This typically means Claude Code CLI is not installed. Users should
+    install it from https://code.claude.com/docs/en/setup.
+    """
 
 
 class KeelClaudeAuthError(KeelClaudeError):
-    """Raised when the Claude Code CLI is not authenticated."""
+    """Raised when the Claude Code CLI is not authenticated.
+
+    The user needs to run ``claude`` interactively to sign in, or use
+    ``claude setup-token`` for CI environments.
+    """
 
 
 class KeelClaudeRateLimitError(KeelClaudeError):
-    """Raised when the Claude Code CLI hits a rate limit."""
+    """Raised when the Claude Code CLI hits a rate limit.
+
+    The user should wait before retrying, or upgrade their Claude plan
+    for higher rate limits.
+    """
 
 
 class KeelClaudeOutputError(KeelClaudeError):
-    """Raised when CLI output cannot be parsed or validated."""
+    """Raised when CLI output cannot be parsed or validated.
+
+    This can happen when Claude returns non-JSON output, invalid JSON,
+    or JSON that doesn't match the expected Pydantic schema.
+
+    Attributes:
+        validation_errors: List of Pydantic validation error dicts.
+        raw_payload: The parsed JSON payload before validation failed.
+        raw_result_text: The raw result text from Claude's response.
+    """
 
     def __init__(
         self,
@@ -89,6 +143,14 @@ class KeelClaudeOutputError(KeelClaudeError):
         raw_payload: Any = None,
         raw_result_text: str | None = None,
     ) -> None:
+        """Initialize the output error with diagnostic information.
+
+        Args:
+            message: Human-readable error message.
+            validation_errors: List of Pydantic validation error dicts.
+            raw_payload: The parsed JSON payload before validation failed.
+            raw_result_text: The raw result text from Claude's response.
+        """
         super().__init__(message)
         self.validation_errors: list[dict[str, object]] = validation_errors or []
         self.raw_payload = raw_payload
@@ -99,10 +161,24 @@ class KeelClaudeOutputError(KeelClaudeError):
 
 
 def verify_claude_cli(cwd: Path | None = None) -> None:
-    """
-    Verify the Claude Code CLI is installed and authenticated.
+    """Verify the Claude Code CLI is installed and authenticated.
 
-    Raises KeelClaudeNotFoundError, KeelClaudeAuthError, or KeelClaudeRateLimitError on failure.
+    Performs a lightweight test invocation of the Claude CLI to ensure
+    it's available on PATH and properly authenticated. This is called
+    before expensive operations like architecture generation.
+
+    Args:
+        cwd: Working directory for the verification check.
+
+    Raises:
+        KeelClaudeNotFoundError: If ``claude`` binary is not on PATH.
+        KeelClaudeAuthError: If Claude CLI is not authenticated.
+        KeelClaudeRateLimitError: If rate limit is exceeded.
+        KeelClaudeError: For other subprocess failures.
+
+    Example:
+        >>> from keel.claude_bridge import verify_claude_cli
+        >>> verify_claude_cli()  # Raises if CLI not ready
     """
     if shutil.which(CLAUDE_BINARY) is None:
         raise KeelClaudeNotFoundError(
@@ -141,10 +217,43 @@ def run_claude(
     output_schema: type[BaseModel] | None = None,
     cwd: Path | None = None,
 ) -> dict | BaseModel:
-    """
-    Run a non-interactive Claude Code CLI invocation and return structured output.
+    """Run a non-interactive Claude Code CLI invocation and return structured output.
 
-    Shells out to `claude -p "<prompt>" --output-format json`.
+    Shells out to ``claude -p "<prompt>" --output-format json`` and parses the
+    JSON response. If an output schema is provided, validates the response
+    against the Pydantic model.
+
+    Args:
+        prompt: The prompt text to send to Claude.
+        output_schema: Optional Pydantic model class to validate the response.
+            If provided, the ``result`` field is parsed as JSON and validated.
+        cwd: Working directory for the Claude subprocess.
+
+    Returns:
+        If ``output_schema`` is None, returns the raw JSON envelope as a dict.
+        If ``output_schema`` is provided, returns a validated model instance.
+
+    Raises:
+        KeelClaudeNotFoundError: If ``claude`` binary is not on PATH.
+        KeelClaudeAuthError: If Claude CLI is not authenticated.
+        KeelClaudeRateLimitError: If rate limit is exceeded.
+        KeelClaudeOutputError: If output is not valid JSON or fails validation.
+        KeelClaudeError: For other subprocess failures.
+
+    Example:
+        Without schema validation::
+
+            >>> result = run_claude("List three colors")
+            >>> print(result.get("result"))
+            "Red, blue, green"
+
+        With schema validation::
+
+            >>> class Colors(BaseModel):
+            ...     colors: list[str]
+            >>> result = run_claude("Return JSON: {colors: [...]}", Colors)
+            >>> print(result.colors)
+            ["red", "blue", "green"]
     """
     if shutil.which(CLAUDE_BINARY) is None:
         raise KeelClaudeNotFoundError(
@@ -216,7 +325,23 @@ def run_claude(
 
 
 def format_validation_errors(errors: list[dict[str, object]]) -> str:
-    """Format Pydantic validation errors for human and LLM consumption."""
+    """Format Pydantic validation errors for human and LLM consumption.
+
+    Converts a list of Pydantic validation error dicts into a readable
+    string format suitable for error messages or LLM correction prompts.
+
+    Args:
+        errors: List of error dicts from ``ValidationError.errors()``.
+
+    Returns:
+        Formatted string with one error per line, or "(no validation details)"
+        if the error list is empty.
+
+    Example:
+        >>> errors = [{"loc": ("field1",), "msg": "required", "type": "missing"}]
+        >>> print(format_validation_errors(errors))
+        "- field1: required (missing)"
+    """
     if not errors:
         return "(no validation details)"
 
@@ -230,11 +355,27 @@ def format_validation_errors(errors: list[dict[str, object]]) -> str:
 
 
 def _combined_cli_output(completed: subprocess.CompletedProcess[str]) -> str:
+    """Combine stdout and stderr from a completed subprocess.
+
+    Args:
+        completed: The CompletedProcess object from subprocess.run().
+
+    Returns:
+        Combined output string with empty parts filtered out.
+    """
     parts = [completed.stdout or "", completed.stderr or ""]
     return "\n".join(part.strip() for part in parts if part.strip())
 
 
 def _envelope_indicates_error(stdout: str) -> bool:
+    """Check if the Claude CLI JSON envelope indicates an error.
+
+    Args:
+        stdout: The raw stdout from the Claude CLI.
+
+    Returns:
+        True if the envelope has ``is_error: true``, False otherwise.
+    """
     if not stdout.strip():
         return False
     try:
@@ -245,6 +386,21 @@ def _envelope_indicates_error(stdout: str) -> bool:
 
 
 def _raise_cli_failure(stdout: str, combined_output: str, returncode: int) -> None:
+    """Raise an appropriate error for a failed Claude CLI invocation.
+
+    Analyzes the CLI output to determine the type of failure (auth, rate
+    limit, or general error) and raises the corresponding exception.
+
+    Args:
+        stdout: The raw stdout from the Claude CLI.
+        combined_output: Combined stdout and stderr for the error message.
+        returncode: The process exit code.
+
+    Raises:
+        KeelClaudeRateLimitError: If rate limit patterns are detected.
+        KeelClaudeAuthError: If authentication error patterns are detected.
+        KeelClaudeOutputError: For all other failures.
+    """
     message = combined_output
     api_error_status: int | None = None
 
@@ -279,6 +435,20 @@ def _raise_cli_failure(stdout: str, combined_output: str, returncode: int) -> No
 
 
 def _parse_result_payload(result_text: str) -> Any:
+    """Parse the result field from Claude's JSON response.
+
+    Handles both raw JSON and JSON wrapped in markdown code fences,
+    which Claude sometimes returns.
+
+    Args:
+        result_text: The ``result`` field from the Claude CLI response.
+
+    Returns:
+        Parsed JSON as a Python object (dict, list, etc.).
+
+    Raises:
+        json.JSONDecodeError: If the text is not valid JSON.
+    """
     text = result_text.strip()
     fence_match = re.match(r"^```(?:json)?\s*\n?(.*)\n?```$", text, flags=re.DOTALL)
     if fence_match:

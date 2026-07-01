@@ -1,4 +1,31 @@
-"""Work package generation and storage."""
+"""Work package generation and storage.
+
+This module implements AI-powered work package generation. Work packages
+are agent-ready implementation specifications that combine requirements,
+ADRs, and architecture context into actionable tasks.
+
+Work packages are stored as Markdown files with YAML frontmatter under
+``.keel/specs/WP-*.md``.
+
+The generation flow:
+    1. Find the target architecture node
+    2. Load linked requirements and relevant ADRs
+    3. Ask Claude to generate acceptance criteria and implementation notes
+    4. Save as a new WP-*.md file
+
+Example:
+    Generating a work package for a node::
+
+        from pathlib import Path
+        from keel.work_packages import generate_work_package, GenerateWorkPackageRequest
+
+        request = GenerateWorkPackageRequest(
+            node_id="node_api",
+            requirement_ids=["REQ-001", "REQ-002"],
+        )
+        result = generate_work_package(Path("."), request)
+        print(f"Created {result.path}")
+"""
 
 from __future__ import annotations
 
@@ -18,15 +45,42 @@ SPECS_DIR = Path(".keel") / "specs"
 
 
 class WorkPackageGenerationError(ValueError):
-    """Raised when a work package cannot be generated."""
+    """Raised when a work package cannot be generated.
+
+    Common causes:
+        - Target node not found in architecture
+        - Node has no linked requirements
+        - Referenced requirement not found
+    """
 
 
 class GenerateWorkPackageRequest(BaseModel):
+    """Request to generate a work package.
+
+    Attributes:
+        node_id: ID of the architecture node to generate a work package for.
+        requirement_ids: Optional list of specific requirements to include.
+            If empty, uses all requirements linked to the node.
+    """
+
     node_id: str
     requirement_ids: list[str] = Field(default_factory=list)
 
 
 class WorkPackageDraft(BaseModel):
+    """AI-generated draft content for a work package.
+
+    This is the intermediate format returned by Claude before being
+    combined with metadata to create the final WorkPackage.
+
+    Attributes:
+        title: Short implementation title.
+        acceptance_criteria: List of testable completion criteria.
+        linked_adr_ids: ADRs that guide this implementation.
+        dependencies: Other work packages that must be completed first.
+        body: Markdown implementation notes for the coding agent.
+    """
+
     title: str = Field(min_length=1)
     acceptance_criteria: list[str] = Field(min_length=1)
     linked_adr_ids: list[str] = Field(default_factory=list)
@@ -35,6 +89,14 @@ class WorkPackageDraft(BaseModel):
 
 
 class GeneratedWorkPackage(BaseModel):
+    """Result of work package generation.
+
+    Attributes:
+        work_package: The created WorkPackage model.
+        body: The markdown body content.
+        path: Relative path to the created file.
+    """
+
     work_package: WorkPackage
     body: str
     path: str
@@ -44,6 +106,14 @@ class GeneratedWorkPackage(BaseModel):
 
 
 def _next_work_package_id(root: Path) -> str:
+    """Generate the next sequential work package ID.
+
+    Args:
+        root: Repository root path.
+
+    Returns:
+        Next ID in format "WP-NNN" (e.g., "WP-001", "WP-002").
+    """
     directory = root / SPECS_DIR
     if not directory.exists():
         return "WP-001"
@@ -58,6 +128,18 @@ def _next_work_package_id(root: Path) -> str:
 
 
 def list_work_packages(root: Path) -> list[tuple[WorkPackage, str]]:
+    """List all work packages in the repository.
+
+    Args:
+        root: Repository root path containing ``.keel/specs/``.
+
+    Returns:
+        List of (WorkPackage, body) tuples, sorted by ID.
+
+    Example:
+        >>> for wp, body in list_work_packages(Path(".")):
+        ...     print(f"{wp.id}: {wp.title}")
+    """
     directory = root / SPECS_DIR
     if not directory.exists():
         return []
@@ -69,12 +151,33 @@ def list_work_packages(root: Path) -> list[tuple[WorkPackage, str]]:
 
 
 def _resolve_requirement_ids(node: KeelNode, requested_ids: list[str]) -> list[str]:
+    """Resolve which requirement IDs to use for generation.
+
+    Args:
+        node: The target architecture node.
+        requested_ids: Explicitly requested requirement IDs.
+
+    Returns:
+        List of requirement IDs to use (requested or from node.req_ids).
+    """
     if requested_ids:
         return requested_ids
     return list(node.req_ids)
 
 
 def _load_requirement_context(root: Path, requirement_ids: list[str]) -> list[dict[str, object]]:
+    """Load requirements as context for work package generation.
+
+    Args:
+        root: Repository root path.
+        requirement_ids: IDs of requirements to load.
+
+    Returns:
+        List of dicts with "frontmatter" and "body" keys.
+
+    Raises:
+        WorkPackageGenerationError: If any requirement is not found.
+    """
     items: list[dict[str, object]] = []
     for req_id in requirement_ids:
         try:
@@ -91,6 +194,19 @@ def _load_requirement_context(root: Path, requirement_ids: list[str]) -> list[di
 
 
 def _load_relevant_adrs(root: Path, node: KeelNode) -> list[dict[str, object]]:
+    """Load ADRs relevant to a node for work package generation.
+
+    Includes ADRs that are either:
+        - Linked from the node (node.adr_ids)
+        - Link to the node (adr.linked_node_ids)
+
+    Args:
+        root: Repository root path.
+        node: The target architecture node.
+
+    Returns:
+        List of dicts with "frontmatter" and "body" keys.
+    """
     results: list[dict[str, object]] = []
     seen: set[str] = set()
     for adr, body in list_adrs(root):
@@ -107,6 +223,16 @@ def _build_generation_prompt(
     requirements: list[dict[str, object]],
     adrs: list[dict[str, object]],
 ) -> str:
+    """Build the prompt for work package generation.
+
+    Args:
+        node: The target architecture node.
+        requirements: Requirement context from _load_requirement_context().
+        adrs: ADR context from _load_relevant_adrs().
+
+    Returns:
+        Formatted prompt string for Claude.
+    """
     return f"""You are drafting a Keel work package for an AI coding agent.
 
 Target architecture node:
@@ -143,6 +269,28 @@ Rules:
 
 
 def generate_work_package(root: Path, request: GenerateWorkPackageRequest) -> GeneratedWorkPackage:
+    """Generate a work package for an architecture node using AI.
+
+    Creates a new WP-*.md file with AI-generated acceptance criteria
+    and implementation notes based on linked requirements and ADRs.
+
+    Args:
+        root: Repository root path containing ``.keel/``.
+        request: GenerateWorkPackageRequest with node_id and optional requirement_ids.
+
+    Returns:
+        GeneratedWorkPackage with the created work package and file path.
+
+    Raises:
+        WorkPackageGenerationError: If node not found or has no requirements.
+        KeelClaudeError: If Claude CLI fails or returns unexpected output.
+
+    Example:
+        >>> request = GenerateWorkPackageRequest(node_id="node_api")
+        >>> result = generate_work_package(Path("."), request)
+        >>> print(result.work_package.title)
+        "Implement user authentication API"
+    """
     try:
         _, _, node = find_node_location(root, request.node_id)
     except KeyError as exc:
