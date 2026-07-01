@@ -1,3 +1,6 @@
+/**
+ * Quality characteristics (non-functional requirements) in the left sidebar.
+ */
 import { useEffect, useState } from "react";
 
 import {

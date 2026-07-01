@@ -14,6 +14,9 @@ from keel.file_io import read_keel_file
 from keel.schema import ArchitectureFile, Requirement
 
 
+# -- API models --------------------------------------------------------------
+
+
 class ImpactItem(BaseModel):
     node_id: str
     reason: str
@@ -25,6 +28,9 @@ class AssessImpactResponse(BaseModel):
 
 class AssessImpactRequest(BaseModel):
     requirement_id: str
+
+
+# -- Main flow: load context, ask Claude, ensure linked nodes appear ----------
 
 
 def assess_impact(root: Path, requirement_id: str) -> AssessImpactResponse:
@@ -41,6 +47,9 @@ def assess_impact(root: Path, requirement_id: str) -> AssessImpactResponse:
             AssessImpactResponse.model_validate(result),
         )
     raise KeelClaudeError("Unexpected response type from Claude Code.")
+
+
+# -- Prompt building and post-processing ---------------------------------------
 
 
 def _load_architecture_context(root: Path) -> dict[str, object]:

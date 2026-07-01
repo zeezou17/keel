@@ -1,4 +1,4 @@
-"""`keel init` implementation."""
+"""`keel init` implementation — scaffolds `.keel/` and initial C4 diagrams."""
 
 from __future__ import annotations
 
@@ -33,6 +33,9 @@ KEEL_SECTION_END = "<!-- /keel:architecture-context -->"
 ARCHITECTURE_MAX_ATTEMPTS = 4  # initial attempt plus up to 3 automatic retries
 
 console = Console()
+
+
+# -- Data shapes for Claude-generated C1/C2 bundles --------------------------
 
 
 class InitArchitectureBundle(BaseModel):
@@ -73,6 +76,9 @@ class ArchitectureAttemptFailure:
     semantic_errors: list[str] = field(default_factory=list)
     raw_payload: Any = None
     raw_result_text: str | None = None
+
+
+# -- Public entry point ------------------------------------------------------
 
 
 def run_init(
@@ -141,6 +147,9 @@ def run_init(
             raise typer.Exit(str(exc)) from exc
 
     return written
+
+
+# -- Claude-driven C1/C2 generation (with retries) ---------------------------
 
 
 def _generate_architecture(root: Path, description: str) -> InitArchitectureBundle:
@@ -312,6 +321,9 @@ def _format_architecture_generation_failure(exc: ArchitectureGenerationError) ->
         sections.extend(["", "All attempts:", json.dumps(exc.attempt_history, indent=2)])
 
     return "\n".join(sections)
+
+
+# -- Prompt templates shown to Claude during init -----------------------------
 
 
 def _architecture_schema_example() -> str:
@@ -488,6 +500,9 @@ Return corrected JSON only — no markdown fences, no commentary.
 """
 
 
+# -- Write generated files to disk (.keel/, agents, GitHub Action) ------------
+
+
 def _write_architecture(root: Path, bundle: InitArchitectureBundle) -> list[Path]:
     arch_dir = root / ".keel" / "architecture"
     arch_dir.mkdir(parents=True, exist_ok=True)
@@ -564,6 +579,9 @@ def merge_keel_section(existing: str, new_section: str) -> str:
         merged = existing.rstrip() + "\n\n" + new_section + "\n"
 
     return merged
+
+
+# -- CLI success output --------------------------------------------------------
 
 
 def print_success_summary(written: list[Path], root: Path) -> None:

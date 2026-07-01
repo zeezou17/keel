@@ -40,6 +40,9 @@ class GeneratedWorkPackage(BaseModel):
     path: str
 
 
+# -- List and ID helpers -----------------------------------------------------
+
+
 def _next_work_package_id(root: Path) -> str:
     directory = root / SPECS_DIR
     if not directory.exists():
@@ -134,6 +137,9 @@ Rules:
 - dependencies may be empty.
 - Return JSON only, no markdown fences.
 """
+
+
+# -- Generate a WP-*.md spec for a diagram node via Claude -------------------
 
 
 def generate_work_package(root: Path, request: GenerateWorkPackageRequest) -> GeneratedWorkPackage:

@@ -2,6 +2,9 @@
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+# Keel Python package: CLI (`keel`), FastAPI server, and .keel/ file logic.
+# Frontend lives in frontend/ and is built into keel/static/ separately.
+
 [project]
 name = "keel"
 version = "0.1.0"

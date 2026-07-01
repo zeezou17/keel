@@ -1,3 +1,6 @@
+/**
+ * Architecture Decision Records (ADRs) list and editor in the left sidebar.
+ */
 import { useEffect, useState } from "react";
 
 import { createAdr, fetchAdrs, updateAdr, type ADR } from "../api/client";

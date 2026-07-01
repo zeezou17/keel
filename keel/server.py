@@ -1,4 +1,11 @@
-"""FastAPI server for Keel dev UI and architecture API."""
+"""
+FastAPI server for Keel dev UI and architecture API.
+
+This module is the HTTP layer between the React frontend and the Python
+business logic. Each `/api/*` route loads or saves data under `.keel/` in the
+git repo pointed to by the KEEL_REPO_ROOT environment variable (set by
+`keel dev`). Non-API routes serve the pre-built React bundle from keel/static/.
+"""
 
 from __future__ import annotations
 
@@ -54,6 +61,9 @@ from keel.work_packages import (
 
 STATIC_DIR = Path(__file__).parent / "static"
 KEEL_REPO_ROOT_ENV = "KEEL_REPO_ROOT"
+
+
+# -- API request/response shapes (JSON bodies from the frontend) -------------
 
 
 class NodeCreateRequest(BaseModel):
@@ -119,6 +129,9 @@ class ADRResponse(BaseModel):
     body: str
 
 
+# -- Small helpers -----------------------------------------------------------
+
+
 def _requirement_response(requirement: Requirement, body: str) -> RequirementResponse:
     return RequirementResponse(
         id=requirement.id,
@@ -150,6 +163,8 @@ def get_repo_root() -> Path:
 
 def create_app() -> FastAPI:
     app = FastAPI(title="Keel", version="0.1.0")
+
+    # -- C4 architecture diagram (nodes, edges, levels) ------------------------
 
     @app.get("/api/architecture/{level}")
     def get_architecture(
@@ -209,6 +224,8 @@ def create_app() -> FastAPI:
         except NodeNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
+    # -- Git integration (dirty flag and commit from the toolbar) --------------
+
     @app.get("/api/git/status")
     def git_status() -> dict[str, object]:
         root = get_repo_root()
@@ -228,6 +245,8 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {"commit": commit_sha}
 
+    # -- AI sparring chat (Claude Code architecture assistant) -----------------
+
     @app.post("/api/spar")
     def spar(request: SparRequest) -> SparResponse:
         root = get_repo_root()
@@ -235,6 +254,8 @@ def create_app() -> FastAPI:
             return run_spar(root, request)
         except KeelClaudeError as exc:
             raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    # -- Flat node list (used when linking requirements to diagram nodes) ------
 
     @app.get("/api/nodes")
     def list_nodes() -> list[KeelNode]:
@@ -246,6 +267,8 @@ def create_app() -> FastAPI:
                 arch = load_architecture(root, level)
                 nodes.extend(arch.nodes)
         return nodes
+
+    # -- Requirements (.keel/requirements/*.md) ---------------------------------
 
     @app.get("/api/requirements")
     def get_requirements() -> list[RequirementResponse]:
@@ -302,6 +325,8 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         return {"deleted": req_id}
 
+    # -- Architecture Decision Records (.keel/decisions/*.md) ------------------
+
     @app.get("/api/adrs")
     def get_adrs() -> list[ADRResponse]:
         root = get_repo_root()
@@ -352,6 +377,8 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         return {"deleted": adr_id}
 
+    # -- Quality characteristics (.keel/characteristics/*.yml) -----------------
+
     @app.get("/api/characteristics")
     def get_characteristics() -> list[Characteristic]:
         root = get_repo_root()
@@ -397,6 +424,8 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         return {"deleted": char_id}
 
+    # -- AI impact assessment and work package generation ----------------------
+
     @app.post("/api/assess-impact")
     def post_assess_impact(request: AssessImpactRequest) -> AssessImpactResponse:
         root = get_repo_root()
@@ -427,6 +456,8 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except KeelClaudeError as exc:
             raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    # -- Static React UI (built by scripts/build_frontend.sh) --------------------
 
     @app.get("/")
     def index() -> FileResponse:

@@ -1,3 +1,7 @@
+/**
+ * Requirements list and editor in the left sidebar.
+ * Supports linking nodes, saving to disk, and AI impact assessment.
+ */
 import { useEffect, useState } from "react";
 
 import {

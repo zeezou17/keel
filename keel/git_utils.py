@@ -27,6 +27,9 @@ def repo_root(repo: Repo) -> Path:
     return Path(repo.working_tree_dir or repo.git_dir).resolve()
 
 
+# -- Commits and .keel/ dirty tracking (used by dev UI toolbar) --------------
+
+
 def commit_paths(repo: Repo, paths: list[Path], message: str) -> str:
     """Stage the given paths and create a single commit."""
     if not paths:

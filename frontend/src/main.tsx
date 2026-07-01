@@ -1,3 +1,7 @@
+/**
+ * Browser entry point. Mounts the React app into the HTML page served by
+ * `keel dev` (see keel/static/index.html after running build_frontend.sh).
+ */
 import React from "react";
 import ReactDOM from "react-dom/client";
 

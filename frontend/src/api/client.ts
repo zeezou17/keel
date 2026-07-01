@@ -1,3 +1,9 @@
+/**
+ * HTTP client for the Keel Python API (`/api/*` routes in keel/server.py).
+ *
+ * Each function maps to one REST endpoint. Types mirror keel/schema.py models.
+ */
+
 export type NodeType = "person" | "system" | "container" | "component" | "external";
 
 export interface KeelNode {
@@ -83,6 +89,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+// -- C4 architecture diagram -------------------------------------------------
+
 export function fetchArchitecture(level: number, containerId?: string | null) {
   const query = containerId ? `?container_id=${encodeURIComponent(containerId)}` : "";
   return request<ArchitectureFile>(`/api/architecture/${level}${query}`);
@@ -114,6 +122,8 @@ export function updateNode(nodeId: string, node: KeelNode) {
   });
 }
 
+// -- Git status and commit from the toolbar ----------------------------------
+
 export function fetchGitStatus() {
   return request<GitStatus>("/api/git/status");
 }
@@ -124,6 +134,8 @@ export function commitChanges(message = "chore: update keel architecture") {
     body: JSON.stringify({ message }),
   });
 }
+
+// -- AI sparring chat --------------------------------------------------------
 
 export function spar(
   message: string,
@@ -141,6 +153,8 @@ export function spar(
     }),
   });
 }
+
+// -- Requirements, ADRs, characteristics (sidebar document panels) -----------
 
 export type ReqStatus = "draft" | "approved" | "implemented";
 export type ADRStatus = "proposed" | "accepted" | "deprecated" | "superseded";
@@ -260,6 +274,8 @@ export function updateCharacteristic(characteristic: Characteristic) {
     body: JSON.stringify(characteristic),
   });
 }
+
+// -- Work packages (generated from node detail panel) ------------------------
 
 export interface WorkPackage {
   id: string;

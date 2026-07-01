@@ -1,3 +1,8 @@
+/**
+ * Local-only storage for AI sparring chat sessions (browser localStorage).
+ *
+ * Not synced to the server — each browser keeps its own chat history.
+ */
 import type { SparMessage } from "../api/client";
 
 const STORAGE_KEY = "keel:spar-sessions";
@@ -16,6 +21,9 @@ export interface SparStore {
   activeSessionId: string | null;
   sessions: SparSession[];
 }
+
+// -- Load/save entire store --------------------------------------------------
+
 
 function emptyStore(): SparStore {
   return { activeSessionId: null, sessions: [] };
@@ -51,6 +59,9 @@ export function loadSparStore(): SparStore {
 export function saveSparStore(store: SparStore): void {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
 }
+
+// -- Session CRUD (create, select, delete, update messages) --------------------
+
 
 export function createSession(viewLevel: number, containerId: string | null): SparSession {
   const now = new Date().toISOString();
@@ -133,6 +144,9 @@ export function updateSessionMessages(
     ),
   };
 }
+
+// -- Display helpers for the session dropdown ----------------------------------
+
 
 export function sortedSessions(sessions: SparSession[]): SparSession[] {
   return [...sessions].sort(
