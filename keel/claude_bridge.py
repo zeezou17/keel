@@ -48,6 +48,19 @@ class KeelClaudeRateLimitError(KeelClaudeError):
 class KeelClaudeOutputError(KeelClaudeError):
     """Raised when CLI output cannot be parsed or validated."""
 
+    def __init__(
+        self,
+        message: str,
+        *,
+        validation_errors: list[dict[str, object]] | None = None,
+        raw_payload: Any = None,
+        raw_result_text: str | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.validation_errors: list[dict[str, object]] = validation_errors or []
+        self.raw_payload = raw_payload
+        self.raw_result_text = raw_result_text
+
 
 def verify_claude_cli(cwd: Path | None = None) -> None:
     """
@@ -157,8 +170,25 @@ def run_claude(
         return output_schema.model_validate(payload)
     except ValidationError as exc:
         raise KeelClaudeOutputError(
-            "Claude Code CLI JSON output failed schema validation."
+            "Claude Code CLI JSON output failed schema validation.",
+            validation_errors=list(exc.errors()),
+            raw_payload=payload,
+            raw_result_text=result_text,
         ) from exc
+
+
+def format_validation_errors(errors: list[dict[str, object]]) -> str:
+    """Format Pydantic validation errors for human and LLM consumption."""
+    if not errors:
+        return "(no validation details)"
+
+    lines: list[str] = []
+    for error in errors:
+        location = ".".join(str(part) for part in error.get("loc", ()))
+        message = error.get("msg", "invalid value")
+        error_type = error.get("type", "value_error")
+        lines.append(f"- {location}: {message} ({error_type})")
+    return "\n".join(lines)
 
 
 def _combined_cli_output(completed: subprocess.CompletedProcess[str]) -> str:

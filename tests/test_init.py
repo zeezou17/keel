@@ -155,14 +155,121 @@ def test_run_init_malformed_json_writes_no_files(
     from keel.claude_bridge import KeelClaudeOutputError
 
     mock_run_claude.side_effect = KeelClaudeOutputError(
-        "Claude Code CLI `result` field is not valid JSON."
+        "Claude Code CLI `result` field is not valid JSON.",
     )
 
     with pytest.raises(typer.Exit, match="No files were written"):
         run_init(path=git_repo, description="Broken", skip_commit=True)
 
+    assert mock_run_claude.call_count == 4
     assert not (git_repo / ".keel").exists()
     assert not (git_repo / "CLAUDE.md").exists()
+
+
+@patch("keel.init_cmd.verify_claude_cli")
+@patch("keel.init_cmd.run_claude")
+def test_run_init_retries_until_valid_bundle(
+    mock_run_claude: object,
+    _mock_verify: object,
+    git_repo: Path,
+) -> None:
+    from keel.claude_bridge import KeelClaudeOutputError
+
+    invalid_edges = {
+        "c1": {
+            "schema_version": 1,
+            "level": 1,
+            "container_id": None,
+            "nodes": [
+                {
+                    "id": "node_main-system",
+                    "type": "system",
+                    "level": 1,
+                    "name": "Main System",
+                    "description": "Core application",
+                    "paths": ["src/**"],
+                }
+            ],
+            "edges": [
+                {
+                    "id": "e1",
+                    "source": "node_main-system",
+                    "target": "node_main-system",
+                    "description": "invalid",
+                }
+            ],
+        },
+        "c2": {
+            "schema_version": 1,
+            "level": 2,
+            "container_id": None,
+            "nodes": [],
+            "edges": [],
+        },
+    }
+    mock_run_claude.side_effect = [
+        KeelClaudeOutputError(
+            "Claude Code CLI JSON output failed schema validation.",
+            validation_errors=[{"loc": ("c1", "edges", 0, "source_id"), "msg": "Field required", "type": "missing"}],
+            raw_payload=invalid_edges,
+            raw_result_text=json.dumps(invalid_edges),
+        ),
+        _bundle_models(),
+    ]
+
+    written = run_init(path=git_repo, description="A todo app", skip_commit=True)
+
+    assert mock_run_claude.call_count == 2
+    assert (git_repo / ".keel/architecture/c1-context.json").exists()
+    assert len(written) == 6
+
+
+@patch("keel.init_cmd.verify_claude_cli")
+@patch("keel.init_cmd.run_claude")
+def test_run_init_reports_detailed_failure_after_retries(
+    mock_run_claude: object,
+    _mock_verify: object,
+    git_repo: Path,
+) -> None:
+    from keel.claude_bridge import KeelClaudeOutputError
+
+    invalid_payload = {"c1": {"level": 1}, "c2": {"level": 2}}
+    mock_run_claude.side_effect = KeelClaudeOutputError(
+        "Claude Code CLI JSON output failed schema validation.",
+        validation_errors=[{"loc": ("c1", "nodes"), "msg": "Field required", "type": "missing"}],
+        raw_payload=invalid_payload,
+        raw_result_text=json.dumps(invalid_payload),
+    )
+
+    with pytest.raises(typer.Exit) as exc_info:
+        run_init(path=git_repo, description="Broken", skip_commit=True)
+
+    output = str(exc_info.value)
+    assert "No files were written" in output
+    assert "Validation errors" in output
+    assert "Returned JSON" in output
+    assert "Attempt summary" in output
+    assert mock_run_claude.call_count == 4
+
+
+def test_build_architecture_prompt_includes_required_edge_fields() -> None:
+    from keel.init_cmd import _build_architecture_prompt
+
+    prompt = _build_architecture_prompt(description="Demo app", mode="greenfield")
+
+    assert "source_id" in prompt
+    assert "target_id" in prompt
+    assert "INVALID edge shape" in prompt
+    assert "container and external only" in prompt
+
+
+def test_build_architecture_prompt_brownfield_requires_real_paths() -> None:
+    from keel.init_cmd import _build_architecture_prompt
+
+    prompt = _build_architecture_prompt(description="", mode="brownfield")
+
+    assert "real directory globs" in prompt
+    assert "Explore the repository structure" in prompt
 
 
 @patch("keel.init_cmd.verify_claude_cli")

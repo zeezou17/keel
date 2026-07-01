@@ -1,6 +1,7 @@
 """Typer CLI entry point for Keel."""
 
 import os
+import shutil
 import threading
 import time
 import webbrowser
@@ -11,7 +12,7 @@ import typer
 import uvicorn
 
 from keel.init_cmd import print_success_summary, run_init
-from keel.server import KEEL_REPO_ROOT_ENV
+from keel.server import KEEL_REPO_ROOT_ENV, STATIC_DIR
 
 app = typer.Typer(
     name="keel",
@@ -75,6 +76,21 @@ def dev(
     root = (path or Path.cwd()).resolve()
     if not (root / ".keel").exists():
         raise typer.Exit("No .keel/ workspace found. Run `keel init` first.")
+
+    index_path = STATIC_DIR / "index.html"
+    if not index_path.exists():
+        npm_hint = ""
+        if shutil.which("npm") is None:
+            npm_hint = (
+                "\n\nnpm was not found on PATH. Install Node.js 18+ and npm, then rebuild:\n"
+                "  conda install -c conda-forge nodejs   # or use nvm / your OS package manager"
+            )
+        raise typer.Exit(
+            "Frontend bundle missing. Build it before running `keel dev`:\n"
+            "  ./scripts/build_frontend.sh\n"
+            "Run that command from the Keel source repository (where frontend/ lives)."
+            f"{npm_hint}"
+        )
 
     os.environ[KEEL_REPO_ROOT_ENV] = str(root)
     url = f"http://127.0.0.1:{port}"
