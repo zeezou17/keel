@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   createNode,
@@ -6,8 +6,23 @@ import {
   type ArchitectureFile,
   type KeelNode,
   type SparAction,
+  type SparHistoryMessage,
   type SparMessage,
 } from "../api/client";
+import {
+  deleteSession,
+  ensureActiveSession,
+  formatSessionTime,
+  loadSparStore,
+  saveSparStore,
+  selectSession,
+  sortedSessions,
+  startNewSession,
+  titleFromMessage,
+  updateSessionMessages,
+  type SparSession,
+  type SparStore,
+} from "../spar/sessions";
 
 interface SparringPanelProps {
   level: number;
@@ -17,6 +32,17 @@ interface SparringPanelProps {
   onArchitectureUpdated: (architecture: ArchitectureFile) => void;
 }
 
+function toApiHistory(messages: SparMessage[]): SparHistoryMessage[] {
+  return messages
+    .filter((message): message is SparMessage & { role: "user" | "assistant" } =>
+      message.role === "user" || message.role === "assistant",
+    )
+    .map((message) => ({
+      role: message.role,
+      content: message.content,
+    }));
+}
+
 export function SparringPanel({
   level,
   containerId,
@@ -24,16 +50,78 @@ export function SparringPanel({
   onToggleCollapsed,
   onArchitectureUpdated,
 }: SparringPanelProps) {
-  const [messages, setMessages] = useState<SparMessage[]>([]);
+  const [store, setStore] = useState<SparStore>(() => loadSparStore());
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const [sessionsOpen, setSessionsOpen] = useState(false);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const sessionsMenuRef = useRef<HTMLDivElement>(null);
+
+  const normalizedContainerId = containerId ?? null;
+
+  useEffect(() => {
+    saveSparStore(store);
+  }, [store]);
 
   useEffect(() => {
     if (!collapsed) {
       inputRef.current?.focus();
     }
-  }, [collapsed]);
+  }, [collapsed, store.activeSessionId]);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [store.activeSessionId, store.sessions, loading]);
+
+  useEffect(() => {
+    if (!sessionsOpen) {
+      return;
+    }
+    const onPointerDown = (event: MouseEvent) => {
+      if (!sessionsMenuRef.current?.contains(event.target as Node)) {
+        setSessionsOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onPointerDown);
+    return () => document.removeEventListener("mousedown", onPointerDown);
+  }, [sessionsOpen]);
+
+  const activeSession = useMemo(
+    () => store.sessions.find((session) => session.id === store.activeSessionId) ?? null,
+    [store],
+  );
+
+  const sessionList = useMemo(() => sortedSessions(store.sessions), [store.sessions]);
+
+  const messages = activeSession?.messages ?? [];
+
+  const patchStore = useCallback((updater: (current: SparStore) => SparStore) => {
+    setStore((current) => updater(current));
+  }, []);
+
+  const handleNewSession = useCallback(() => {
+    patchStore((current) => startNewSession(current, level, normalizedContainerId));
+    setInput("");
+    setSessionsOpen(false);
+  }, [level, normalizedContainerId, patchStore]);
+
+  const handleSelectSession = useCallback(
+    (sessionId: string) => {
+      patchStore((current) => selectSession(current, sessionId));
+      setInput("");
+      setSessionsOpen(false);
+    },
+    [patchStore],
+  );
+
+  const handleDeleteSession = useCallback(
+    (sessionId: string, event: React.MouseEvent) => {
+      event.stopPropagation();
+      patchStore((current) => deleteSession(current, sessionId));
+    },
+    [patchStore],
+  );
 
   const sendMessage = async () => {
     const trimmed = input.trim();
@@ -41,66 +129,109 @@ export function SparringPanel({
       return;
     }
 
+    let workingStore = store;
+    let session: SparSession;
+    if (activeSession) {
+      session = activeSession;
+    } else {
+      const ensured = ensureActiveSession(store, level, normalizedContainerId);
+      workingStore = ensured.store;
+      session = ensured.session;
+      setStore(workingStore);
+    }
+
     const userMessage: SparMessage = {
       id: crypto.randomUUID(),
       role: "user",
       content: trimmed,
     };
-    setMessages((current) => [...current, userMessage]);
+    const priorMessages = session.messages;
+    const nextMessages = [...priorMessages, userMessage];
+    const nextTitle =
+      priorMessages.length === 0 ? titleFromMessage(trimmed) : session.title;
+
+    const withUser = updateSessionMessages(
+      workingStore,
+      session.id,
+      nextMessages,
+      nextTitle,
+    );
+    setStore(withUser);
     setInput("");
     setLoading(true);
 
     try {
-      const response = await spar(trimmed, level, containerId);
-      setMessages((current) => [
-        ...current,
-        {
-          id: crypto.randomUUID(),
-          role: "assistant",
-          content: response.reply,
-          actions: response.actions,
-        },
-      ]);
+      const response = await spar(
+        trimmed,
+        level,
+        normalizedContainerId,
+        toApiHistory(priorMessages),
+      );
+      setStore((current) =>
+        updateSessionMessages(current, session.id, [
+          ...nextMessages,
+          {
+            id: crypto.randomUUID(),
+            role: "assistant",
+            content: response.reply,
+            actions: response.actions,
+          },
+        ]),
+      );
     } catch (err) {
-      setMessages((current) => [
-        ...current,
-        {
-          id: crypto.randomUUID(),
-          role: "error",
-          content: err instanceof Error ? err.message : "Claude Code request failed.",
-        },
-      ]);
+      setStore((current) =>
+        updateSessionMessages(current, session.id, [
+          ...nextMessages,
+          {
+            id: crypto.randomUUID(),
+            role: "error",
+            content: err instanceof Error ? err.message : "Claude Code request failed.",
+          },
+        ]),
+      );
     } finally {
       setLoading(false);
     }
   };
 
   const applyAction = async (action: SparAction) => {
-    if (action.type !== "add_node") {
+    if (action.type !== "add_node" || !activeSession) {
       return;
     }
     try {
       const updated = await createNode(action.level, action.node as KeelNode, action.container_id);
-      if (action.level === level && (action.container_id ?? null) === (containerId ?? null)) {
+      if (action.level === level && (action.container_id ?? null) === normalizedContainerId) {
         onArchitectureUpdated(updated);
       }
-      setMessages((current) => [
-        ...current,
-        {
-          id: crypto.randomUUID(),
-          role: "assistant",
-          content: `Applied: ${action.label}`,
-        },
-      ]);
+      setStore((current) =>
+        updateSessionMessages(current, activeSession.id, [
+          ...activeSession.messages,
+          {
+            id: crypto.randomUUID(),
+            role: "assistant",
+            content: `Applied: ${action.label}`,
+          },
+        ]),
+      );
     } catch (err) {
-      setMessages((current) => [
-        ...current,
-        {
-          id: crypto.randomUUID(),
-          role: "error",
-          content: err instanceof Error ? err.message : "Failed to apply suggestion.",
-        },
-      ]);
+      setStore((current) =>
+        updateSessionMessages(current, activeSession.id, [
+          ...activeSession.messages,
+          {
+            id: crypto.randomUUID(),
+            role: "error",
+            content: err instanceof Error ? err.message : "Failed to apply suggestion.",
+          },
+        ]),
+      );
+    }
+  };
+
+  const handleComposerKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    event.stopPropagation();
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      void sendMessage();
     }
   };
 
@@ -117,18 +248,86 @@ export function SparringPanel({
   return (
     <aside className="spar-panel">
       <div className="spar-header">
-        <h2>AI Sparring</h2>
-        <button className="spar-toggle" onClick={onToggleCollapsed}>
-          Collapse
-        </button>
+        <div className="spar-header-main" ref={sessionsMenuRef}>
+          <button
+            type="button"
+            className="spar-session-trigger"
+            onClick={() => setSessionsOpen((open) => !open)}
+            aria-expanded={sessionsOpen}
+            aria-haspopup="listbox"
+          >
+            <span className="spar-session-title">{activeSession?.title ?? "New chat"}</span>
+            <span className="spar-session-caret" aria-hidden>
+              ▾
+            </span>
+          </button>
+          {sessionsOpen ? (
+            <div className="spar-sessions-menu" role="listbox">
+              {sessionList.length === 0 ? (
+                <p className="spar-sessions-empty">No saved chats yet.</p>
+              ) : (
+                sessionList.map((session) => (
+                  <div
+                    key={session.id}
+                    role="option"
+                    aria-selected={session.id === store.activeSessionId}
+                    className={`spar-session-item${
+                      session.id === store.activeSessionId ? " active" : ""
+                    }`}
+                    onClick={() => handleSelectSession(session.id)}
+                  >
+                    <div className="spar-session-item-text">
+                      <span className="spar-session-item-title">{session.title}</span>
+                      <span className="spar-session-item-meta">
+                        {formatSessionTime(session.updatedAt)} · C{session.viewLevel}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      className="spar-session-delete"
+                      aria-label={`Delete ${session.title}`}
+                      onClick={(event) => handleDeleteSession(session.id, event)}
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+          ) : null}
+        </div>
+        <div className="spar-header-actions">
+          <button
+            type="button"
+            className="spar-icon-button"
+            onClick={handleNewSession}
+            title="New chat"
+            aria-label="New chat"
+          >
+            +
+          </button>
+          <button className="spar-toggle" onClick={onToggleCollapsed}>
+            Collapse
+          </button>
+        </div>
       </div>
+
       <div className="spar-messages">
         {messages.length === 0 ? (
-          <p className="spar-empty">Ask about architecture trade-offs, missing containers, or drift risks.</p>
+          <div className="spar-empty-state">
+            <p className="spar-empty-title">Architecture sparring</p>
+            <p className="spar-empty">
+              Ask about trade-offs, missing containers, or drift risks. Chats are saved locally in
+              this browser.
+            </p>
+          </div>
         ) : null}
         {messages.map((message) => (
           <div key={message.id} className={`spar-message ${message.role}`}>
-            <p>{message.content}</p>
+            <div className="spar-message-label">
+              {message.role === "user" ? "You" : message.role === "error" ? "Error" : "Assistant"}
+            </div>
+            <div className="spar-message-body">{message.content}</div>
             {message.actions?.map((action) => (
               <button
                 key={`${message.id}-${action.label}`}
@@ -140,26 +339,39 @@ export function SparringPanel({
             ))}
           </div>
         ))}
-        {loading ? <div className="spar-loading">Thinking with Claude Code…</div> : null}
+        {loading ? (
+          <div className="spar-message assistant loading">
+            <div className="spar-message-label">Assistant</div>
+            <div className="spar-message-body spar-loading">Thinking with Claude Code…</div>
+          </div>
+        ) : null}
+        <div ref={messagesEndRef} />
       </div>
+
       <form
-        className="spar-input-row"
+        className="spar-composer"
         onSubmit={(event) => {
           event.preventDefault();
           void sendMessage();
         }}
         onKeyDown={(event) => event.stopPropagation()}
       >
-        <input
+        <textarea
           ref={inputRef}
+          className="spar-composer-input"
           value={input}
           onChange={(event) => setInput(event.target.value)}
-          placeholder="Ask an architecture question…"
+          onKeyDown={handleComposerKeyDown}
+          placeholder="Ask a follow-up…"
+          rows={3}
           aria-label="Sparring message"
         />
-        <button type="submit" disabled={loading || !input.trim()}>
-          {loading ? "Waiting…" : "Send"}
-        </button>
+        <div className="spar-composer-footer">
+          <span className="spar-composer-hint">Enter to send · Shift+Enter for newline</span>
+          <button type="submit" className="spar-send-button" disabled={loading || !input.trim()}>
+            {loading ? "Waiting…" : "Send"}
+          </button>
+        </div>
       </form>
     </aside>
   );
