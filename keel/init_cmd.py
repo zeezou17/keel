@@ -1,4 +1,29 @@
-"""`keel init` implementation — scaffolds `.keel/` and initial C4 diagrams."""
+"""``keel init`` implementation — scaffolds ``.keel/`` and initial C4 diagrams.
+
+This module implements the ``keel init`` command, which creates a new Keel
+workspace in a git repository. It uses Claude Code to generate initial
+C1 (Context) and C2 (Container) architecture diagrams.
+
+The initialization process:
+    1. Verify Claude Code CLI is installed and authenticated
+    2. Generate C1/C2 architecture using AI (with automatic retries)
+    3. Write architecture files to ``.keel/architecture/``
+    4. Write agent instruction files (CLAUDE.md, .cursorrules)
+    5. Write GitHub Actions for drift detection
+    6. Commit all files to git
+
+Example:
+    Programmatic initialization::
+
+        from pathlib import Path
+        from keel.init_cmd import run_init
+
+        written_files = run_init(
+            path=Path("/path/to/repo"),
+            description="E-commerce platform with microservices",
+        )
+        print(f"Created {len(written_files)} files")
+"""
 
 from __future__ import annotations
 
@@ -39,12 +64,28 @@ console = Console()
 
 
 class InitArchitectureBundle(BaseModel):
+    """Bundle of C1 and C2 architecture files from initial generation.
+
+    Attributes:
+        c1: The Context (level 1) architecture diagram.
+        c2: The Container (level 2) architecture diagram.
+    """
+
     c1: ArchitectureFile
     c2: ArchitectureFile
 
 
 class ArchitectureGenerationError(KeelClaudeOutputError):
-    """Raised when architecture generation fails after all retry attempts."""
+    """Raised when architecture generation fails after all retry attempts.
+
+    Contains detailed information about each failed attempt for debugging
+    and user feedback.
+
+    Attributes:
+        attempts: Number of attempts made before giving up.
+        analysis: Human-readable analysis of the failures.
+        attempt_history: List of detailed failure information per attempt.
+    """
 
     def __init__(
         self,
@@ -57,6 +98,17 @@ class ArchitectureGenerationError(KeelClaudeOutputError):
         raw_result_text: str | None = None,
         attempt_history: list[dict[str, object]] | None = None,
     ) -> None:
+        """Initialize the error with failure details.
+
+        Args:
+            message: Human-readable error message.
+            attempts: Number of attempts made.
+            analysis: Analysis of what went wrong across attempts.
+            validation_errors: Pydantic validation errors from last attempt.
+            raw_payload: Parsed JSON payload from last attempt.
+            raw_result_text: Raw result text from last attempt.
+            attempt_history: List of failure details from all attempts.
+        """
         super().__init__(
             message,
             validation_errors=validation_errors,
@@ -70,6 +122,17 @@ class ArchitectureGenerationError(KeelClaudeOutputError):
 
 @dataclass
 class ArchitectureAttemptFailure:
+    """Details about a single failed architecture generation attempt.
+
+    Attributes:
+        attempt: The attempt number (1-indexed).
+        message: Human-readable failure message.
+        validation_errors: Pydantic validation errors, if any.
+        semantic_errors: Keel-specific semantic rule violations.
+        raw_payload: The parsed JSON payload, if available.
+        raw_result_text: The raw result text from Claude.
+    """
+
     attempt: int
     message: str
     validation_errors: list[dict[str, object]] = field(default_factory=list)
@@ -86,10 +149,30 @@ def run_init(
     description: str | None = None,
     skip_commit: bool = False,
 ) -> list[Path]:
-    """
-    Initialise a Keel workspace in a git repository.
+    """Initialize a Keel workspace in a git repository.
 
-    Returns the list of files written or updated.
+    Creates the ``.keel/`` directory structure, generates initial C1/C2
+    architecture diagrams using Claude Code, writes agent instruction
+    files, and optionally commits all changes to git.
+
+    Args:
+        path: Repository path to initialize. Defaults to current directory.
+        description: System description for greenfield projects. If empty
+            or None (in interactive mode), analyzes existing codebase.
+        skip_commit: If True, write files without creating a git commit.
+
+    Returns:
+        List of Path objects for all files written or updated.
+
+    Raises:
+        typer.Exit: On any error (not in git repo, Claude CLI issues,
+            generation failures, file write errors).
+
+    Example:
+        >>> from keel.init_cmd import run_init
+        >>> files = run_init(description="REST API for user management")
+        >>> print([f.name for f in files])
+        ["c1-context.json", "c2-containers.json", "CLAUDE.md", ...]
     """
     cwd = (path or Path.cwd()).resolve()
 
@@ -153,6 +236,23 @@ def run_init(
 
 
 def _generate_architecture(root: Path, description: str) -> InitArchitectureBundle:
+    """Generate C1/C2 architecture diagrams using Claude Code.
+
+    Attempts to generate valid architecture JSON up to ARCHITECTURE_MAX_ATTEMPTS
+    times, with automatic retry and correction prompts on failure.
+
+    Args:
+        root: Repository root path for Claude's working directory.
+        description: System description for greenfield, or empty for brownfield.
+
+    Returns:
+        InitArchitectureBundle containing validated C1 and C2 diagrams.
+
+    Raises:
+        ArchitectureGenerationError: If all attempts fail.
+        KeelClaudeOutputError: For non-retriable output errors.
+        KeelClaudeError: For other Claude CLI failures.
+    """
     mode = "brownfield" if not description else "greenfield"
     base_prompt = _build_architecture_prompt(description=description, mode=mode)
     failures: list[ArchitectureAttemptFailure] = []
@@ -226,6 +326,15 @@ def _generate_architecture(root: Path, description: str) -> InitArchitectureBund
 
 
 def _is_retriable_output_error(exc: KeelClaudeOutputError) -> bool:
+    """Determine if a Claude output error can be retried.
+
+    Args:
+        exc: The KeelClaudeOutputError to check.
+
+    Returns:
+        True if the error is retriable (e.g., schema mismatch),
+        False if it's a terminal error (auth, rate limit).
+    """
     message = str(exc).lower()
     non_retriable_markers = (
         "not authenticated",
@@ -237,6 +346,19 @@ def _is_retriable_output_error(exc: KeelClaudeOutputError) -> bool:
 
 
 def _semantic_validate_bundle(bundle: InitArchitectureBundle) -> list[str]:
+    """Validate an architecture bundle against Keel semantic rules.
+
+    Checks rules that Pydantic validation can't enforce, such as:
+    - C1 nodes must have level 1
+    - C2 nodes must have level 2 and be container/external only
+    - C2 shouldn't have a container_id
+
+    Args:
+        bundle: The InitArchitectureBundle to validate.
+
+    Returns:
+        List of error messages. Empty list means validation passed.
+    """
     errors: list[str] = []
     if bundle.c1.level != NodeLevel.c1:
         errors.append("c1.level must be 1 (C1 context diagram).")
@@ -262,6 +384,14 @@ def _semantic_validate_bundle(bundle: InitArchitectureBundle) -> list[str]:
 
 
 def _failure_to_dict(failure: ArchitectureAttemptFailure) -> dict[str, object]:
+    """Convert an ArchitectureAttemptFailure to a serializable dict.
+
+    Args:
+        failure: The failure dataclass to convert.
+
+    Returns:
+        Dictionary suitable for JSON serialization.
+    """
     return {
         "attempt": failure.attempt,
         "message": failure.message,
@@ -273,6 +403,14 @@ def _failure_to_dict(failure: ArchitectureAttemptFailure) -> dict[str, object]:
 
 
 def _analyze_architecture_failures(failures: list[ArchitectureAttemptFailure]) -> str:
+    """Generate human-readable analysis of architecture generation failures.
+
+    Args:
+        failures: List of failures from generation attempts.
+
+    Returns:
+        Formatted string with common issues and per-attempt summaries.
+    """
     lines = [
         "Keel attempted to generate architecture JSON multiple times. Common issues:",
         "- Edges must use source_id and target_id (not source/target).",
@@ -294,6 +432,14 @@ def _analyze_architecture_failures(failures: list[ArchitectureAttemptFailure]) -
 
 
 def _format_architecture_generation_failure(exc: ArchitectureGenerationError) -> str:
+    """Format an ArchitectureGenerationError for CLI output.
+
+    Args:
+        exc: The error to format.
+
+    Returns:
+        Formatted string suitable for printing to the terminal.
+    """
     sections = [
         "Claude Code could not produce valid Keel architecture JSON. No files were written.",
         "",
@@ -327,6 +473,12 @@ def _format_architecture_generation_failure(exc: ArchitectureGenerationError) ->
 
 
 def _architecture_schema_example() -> str:
+    """Return an example JSON schema for architecture generation.
+
+    Returns:
+        A formatted JSON string showing the expected structure
+        of the C1/C2 architecture bundle.
+    """
     return """{
   "c1": {
     "schema_version": 1,
@@ -396,6 +548,15 @@ def _architecture_schema_example() -> str:
 
 
 def _build_architecture_prompt(description: str, mode: str) -> str:
+    """Build the initial prompt for architecture generation.
+
+    Args:
+        description: System description for greenfield projects.
+        mode: Either "greenfield" (new project) or "brownfield" (existing code).
+
+    Returns:
+        Formatted prompt string for Claude.
+    """
     if mode == "greenfield":
         context = (
             f"The user described the system as: {description}\n"
@@ -468,6 +629,16 @@ def _build_architecture_correction_prompt(
     failure: ArchitectureAttemptFailure,
     attempt: int,
 ) -> str:
+    """Build a correction prompt after a failed architecture generation attempt.
+
+    Args:
+        base_prompt: The original architecture prompt.
+        failure: Details about the previous failed attempt.
+        attempt: The current attempt number.
+
+    Returns:
+        Formatted prompt string with error details and correction instructions.
+    """
     details: list[str] = [
         f"Attempt {failure.attempt} failed: {failure.message}",
     ]
@@ -504,6 +675,15 @@ Return corrected JSON only — no markdown fences, no commentary.
 
 
 def _write_architecture(root: Path, bundle: InitArchitectureBundle) -> list[Path]:
+    """Write architecture JSON files to .keel/architecture/.
+
+    Args:
+        root: Repository root path.
+        bundle: The InitArchitectureBundle containing C1 and C2 diagrams.
+
+    Returns:
+        List of paths to the written architecture files.
+    """
     arch_dir = root / ".keel" / "architecture"
     arch_dir.mkdir(parents=True, exist_ok=True)
 
@@ -516,6 +696,16 @@ def _write_architecture(root: Path, bundle: InitArchitectureBundle) -> list[Path
 
 
 def _write_agent_files(root: Path) -> list[Path]:
+    """Write AI agent instruction files (CLAUDE.md, .cursorrules).
+
+    Uses Jinja2 templates and merges with existing content if present.
+
+    Args:
+        root: Repository root path.
+
+    Returns:
+        List of paths to the written agent files.
+    """
     written: list[Path] = []
 
     claude_path = root / "CLAUDE.md"
@@ -534,6 +724,14 @@ def _write_agent_files(root: Path) -> list[Path]:
 
 
 def _write_workflow(root: Path) -> Path:
+    """Write the GitHub Actions workflow for drift detection.
+
+    Args:
+        root: Repository root path.
+
+    Returns:
+        Path to the written workflow file.
+    """
     workflow_src = TEMPLATES_DIR / "keel-drift.yml"
     workflow_dest = root / ".github" / "workflows" / "keel-drift.yml"
     workflow_dest.parent.mkdir(parents=True, exist_ok=True)
@@ -542,6 +740,14 @@ def _write_workflow(root: Path) -> Path:
 
 
 def _write_github_action(root: Path) -> Path:
+    """Write the composite GitHub Action for drift detection.
+
+    Args:
+        root: Repository root path.
+
+    Returns:
+        Path to the written action.yml file.
+    """
     action_src = TEMPLATES_DIR / "github-action" / "action.yml"
     action_dest = root / ".github" / "actions" / "keel-drift" / "action.yml"
     action_dest.parent.mkdir(parents=True, exist_ok=True)
@@ -550,10 +756,33 @@ def _write_github_action(root: Path) -> Path:
 
 
 def _load_template(name: str) -> Template:
+    """Load a Jinja2 template from the templates directory.
+
+    Args:
+        name: Template filename (e.g., "CLAUDE.md.jinja").
+
+    Returns:
+        Compiled Jinja2 Template object.
+    """
     return Template((TEMPLATES_DIR / name).read_text(encoding="utf-8"))
 
 
 def _merge_marked_file(path: Path, new_section: str) -> Path:
+    """Write a file, merging with existing content if present.
+
+    If the file exists, merges the new section using Keel section markers.
+    If the file doesn't exist, writes the new section as the entire content.
+
+    Args:
+        path: Path to the file to write/merge.
+        new_section: The new content to write or merge.
+
+    Returns:
+        Path to the written file.
+
+    Raises:
+        ValueError: If partial Keel markers are found in existing file.
+    """
     new_section = new_section.strip()
     if path.exists():
         existing = path.read_text(encoding="utf-8")
@@ -566,7 +795,27 @@ def _merge_marked_file(path: Path, new_section: str) -> Path:
 
 
 def merge_keel_section(existing: str, new_section: str) -> str:
-    """Insert or replace the marked Keel section without duplicating content."""
+    """Insert or replace the marked Keel section without duplicating content.
+
+    Looks for HTML comment markers (``<!-- keel:architecture-context -->``)
+    to identify the Keel section. If found, replaces it. If not found,
+    appends the new section at the end.
+
+    Args:
+        existing: The existing file content.
+        new_section: The new Keel section content (including markers).
+
+    Returns:
+        Merged content with the Keel section inserted or replaced.
+
+    Raises:
+        ValueError: If partial markers are found (start without end or vice versa).
+
+    Example:
+        >>> existing = "# My Project\\n\\n<!-- keel:... -->old<!-- /keel:... -->"
+        >>> merge_keel_section(existing, "<!-- keel:... -->new<!-- /keel:... -->")
+        "# My Project\\n\\n<!-- keel:... -->new<!-- /keel:... -->"
+    """
     pattern = re.compile(
         rf"{re.escape(KEEL_SECTION_START)}.*?{re.escape(KEEL_SECTION_END)}",
         flags=re.DOTALL,
@@ -585,6 +834,15 @@ def merge_keel_section(existing: str, new_section: str) -> str:
 
 
 def print_success_summary(written: list[Path], root: Path) -> None:
+    """Print a formatted success message after initialization.
+
+    Displays the list of files written and next steps to the console
+    using Rich formatting.
+
+    Args:
+        written: List of paths to files that were written.
+        root: Repository root path (used for relative path display).
+    """
     console.print("\n[bold green]Keel workspace initialised.[/bold green]\n")
     console.print("Files written:")
     for path in written:

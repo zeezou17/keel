@@ -1,4 +1,31 @@
-"""AI sparring helpers for architecture conversations."""
+"""AI sparring helpers for architecture conversations.
+
+This module implements the AI sparring feature, which provides an interactive
+chat interface for discussing architecture decisions. The AI can suggest
+concrete diagram changes (like adding nodes) that users can apply with one
+click.
+
+The sparring flow:
+    1. User sends a message about their architecture
+    2. System gathers current C4 context (diagrams, nodes, edges)
+    3. Claude provides guidance and optionally suggests node additions
+    4. Frontend displays response and action buttons
+
+Example:
+    Running a sparring conversation::
+
+        from pathlib import Path
+        from keel.spar import run_spar, SparRequest
+
+        request = SparRequest(
+            message="Should I add a cache layer?",
+            level=2,  # C2 container diagram
+        )
+        response = run_spar(Path("."), request)
+        print(response.reply)
+        for action in response.actions:
+            print(f"Suggested: {action.label}")
+"""
 
 from __future__ import annotations
 
@@ -19,10 +46,29 @@ from keel.schema import ArchitectureFile, KeelNode
 
 
 class SparActionType(str, Enum):
+    """Types of actions the AI can suggest.
+
+    Attributes:
+        add_node: Suggestion to add a new node to the diagram.
+    """
+
     add_node = "add_node"
 
 
 class SparAction(BaseModel):
+    """A suggested diagram action from the AI sparring partner.
+
+    When the AI suggests a concrete change to the architecture, it
+    returns a SparAction that the frontend can render as a button.
+
+    Attributes:
+        type: Type of action (currently only add_node).
+        label: Human-readable button label (e.g., "Add Redis Cache").
+        level: C4 level for the action (1, 2, or 3).
+        container_id: Parent container ID for C3 actions.
+        node: The complete KeelNode to add if user accepts.
+    """
+
     type: SparActionType = SparActionType.add_node
     label: str
     level: int = Field(ge=1, le=3)
@@ -31,16 +77,39 @@ class SparAction(BaseModel):
 
 
 class SparResponse(BaseModel):
+    """Response from the AI sparring partner.
+
+    Attributes:
+        reply: Natural language response to the user's question.
+        actions: Optional list of suggested diagram changes.
+    """
+
     reply: str
     actions: list[SparAction] = Field(default_factory=list)
 
 
 class SparHistoryMessage(BaseModel):
+    """A single message in the sparring conversation history.
+
+    Attributes:
+        role: Either "user" or "assistant".
+        content: The message content.
+    """
+
     role: Literal["user", "assistant"]
     content: str = Field(min_length=1)
 
 
 class SparRequest(BaseModel):
+    """Request to the sparring endpoint.
+
+    Attributes:
+        message: The user's current message.
+        level: C4 level the user is currently viewing (1, 2, or 3).
+        container_id: For C3 views, the parent container ID.
+        history: Previous messages in this conversation.
+    """
+
     message: str = Field(min_length=1)
     level: int = Field(ge=1, le=3)
     container_id: str | None = None
@@ -51,6 +120,28 @@ class SparRequest(BaseModel):
 
 
 def gather_architecture_context(root: Path, level: int, container_id: str | None) -> dict[str, object]:
+    """Gather architecture context for the AI sparring partner.
+
+    Loads the relevant C4 diagrams based on what the user is currently
+    viewing, providing full context for the AI to give relevant advice.
+
+    Args:
+        root: Repository root path containing ``.keel/architecture/``.
+        level: The C4 level the user is viewing (1, 2, or 3).
+        container_id: For C3 views, the parent container ID.
+
+    Returns:
+        Dictionary containing:
+            - ``view_level``: The current view level
+            - ``container_id``: The current container ID (if any)
+            - ``c1``, ``c2``, ``c3``: Architecture diagram JSON (if exists)
+            - ``available_c3_files``: List of existing C3 file names
+
+    Example:
+        >>> context = gather_architecture_context(Path("."), level=2, container_id=None)
+        >>> print(context.keys())
+        dict_keys(['view_level', 'container_id', 'c1', 'c2', 'available_c3_files'])
+    """
     context: dict[str, object] = {"view_level": level, "container_id": container_id}
 
     for arch_level in (1, 2):
@@ -73,6 +164,28 @@ def gather_architecture_context(root: Path, level: int, container_id: str | None
 
 
 def run_spar(root: Path, request: SparRequest) -> SparResponse:
+    """Run an AI sparring conversation turn.
+
+    Takes the user's message and conversation history, gathers architecture
+    context, calls Claude, and returns a structured response with optional
+    action suggestions.
+
+    Args:
+        root: Repository root path containing ``.keel/``.
+        request: SparRequest with message, level, and optional history.
+
+    Returns:
+        SparResponse with reply text and optional actions.
+
+    Raises:
+        KeelClaudeError: If Claude CLI fails or returns unexpected output.
+
+    Example:
+        >>> request = SparRequest(message="Add caching?", level=2)
+        >>> response = run_spar(Path("."), request)
+        >>> print(response.reply)
+        "Adding a cache layer would improve performance..."
+    """
     context = gather_architecture_context(root, request.level, request.container_id)
     prompt = _build_spar_prompt(request.message, context, request.history)
 
@@ -89,6 +202,16 @@ def _build_spar_prompt(
     context: dict[str, object],
     history: list[SparHistoryMessage],
 ) -> str:
+    """Build the prompt for the AI sparring partner.
+
+    Args:
+        message: The user's current message.
+        context: Architecture context from gather_architecture_context().
+        history: Previous messages in this conversation.
+
+    Returns:
+        Formatted prompt string for Claude.
+    """
     context_json = json.dumps(context, indent=2)
     history_block = ""
     if history:

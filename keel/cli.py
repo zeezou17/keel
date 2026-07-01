@@ -1,4 +1,22 @@
-"""Typer CLI entry point for Keel."""
+"""Typer CLI entry point for Keel.
+
+This module provides the command-line interface for Keel, a living software
+architecture tool that manages C4 diagrams, requirements, ADRs, and work
+packages within a git repository.
+
+Commands:
+    keel init: Initialize a Keel workspace in a git repository
+    keel dev: Start the development server with web UI
+
+Example:
+    Initialize a new Keel workspace::
+
+        $ keel init --description "E-commerce platform with microservices"
+
+    Start the development server::
+
+        $ keel dev --port 8080
+"""
 
 import os
 import shutil
@@ -23,7 +41,12 @@ app = typer.Typer(
 
 @app.callback()
 def main() -> None:
-    """Keel orchestrates the non-code phases of the SDLC inside your git repo."""
+    """Keel orchestrates the non-code phases of the SDLC inside your git repo.
+
+    Keel provides tooling for managing software architecture documentation,
+    including C4 diagrams, requirements, Architecture Decision Records (ADRs),
+    quality characteristics, and AI-generated work packages.
+    """
 
 
 # -- keel init: scaffold .keel/ in a git repo --------------------------------
@@ -54,7 +77,33 @@ def init(
         hidden=True,
     ),
 ) -> None:
-    """Initialise a Keel workspace in the current git repository."""
+    """Initialize a Keel workspace in the current git repository.
+
+    Creates the ``.keel/`` directory structure and generates initial C1/C2
+    architecture diagrams using Claude Code. For greenfield projects, provide
+    a system description. For brownfield projects, leave description empty
+    to analyze the existing codebase.
+
+    Args:
+        path: Repository path to initialize. Defaults to current directory.
+        description: One-sentence system description. If empty, analyzes
+            existing codebase (brownfield mode).
+        skip_commit: If True, write files without creating a git commit.
+            Used for testing.
+
+    Raises:
+        typer.Exit: If not in a git repository, Claude CLI is not available,
+            or architecture generation fails.
+
+    Example:
+        Greenfield project::
+
+            $ keel init -d "Real-time chat application with WebSocket support"
+
+        Brownfield project (analyze existing code)::
+
+            $ keel init
+    """
     written = run_init(path=path, description=description, skip_commit=skip_commit)
     root = (path or Path.cwd()).resolve()
     print_success_summary(written, root)
@@ -78,7 +127,31 @@ def dev(
     port: int = typer.Option(3141, help="Port for the local dev server."),
     no_browser: bool = typer.Option(False, "--no-browser", help="Do not open a browser tab."),
 ) -> None:
-    """Start the Keel dev server and open the architecture canvas."""
+    """Start the Keel dev server and open the architecture canvas.
+
+    Launches a local FastAPI server serving the React-based architecture
+    canvas UI. The server provides APIs for editing C4 diagrams, managing
+    requirements and ADRs, and generating work packages with AI assistance.
+
+    Args:
+        path: Repository path containing the ``.keel/`` directory.
+            Defaults to current directory.
+        port: Port number for the local dev server. Defaults to 3141.
+        no_browser: If True, don't automatically open a browser tab.
+
+    Raises:
+        typer.Exit: If no ``.keel/`` workspace exists or frontend bundle
+            is missing.
+
+    Example:
+        Start with default settings::
+
+            $ keel dev
+
+        Start on a custom port without opening browser::
+
+            $ keel dev --port 8080 --no-browser
+    """
     root = (path or Path.cwd()).resolve()
     if not (root / ".keel").exists():
         raise typer.Exit("No .keel/ workspace found. Run `keel init` first.")
