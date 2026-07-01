@@ -1,3 +1,4 @@
+/** Vite build config: compiles React app into keel/static/ for `keel dev`. */
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 

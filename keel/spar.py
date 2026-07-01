@@ -15,6 +15,9 @@ from keel.file_io import read_keel_file
 from keel.schema import ArchitectureFile, KeelNode
 
 
+# -- API models (request from UI, response with optional diagram actions) ------
+
+
 class SparActionType(str, Enum):
     add_node = "add_node"
 
@@ -44,6 +47,9 @@ class SparRequest(BaseModel):
     history: list[SparHistoryMessage] = Field(default_factory=list)
 
 
+# -- Gather C4 JSON for the canvas view the user is looking at -----------------
+
+
 def gather_architecture_context(root: Path, level: int, container_id: str | None) -> dict[str, object]:
     context: dict[str, object] = {"view_level": level, "container_id": container_id}
 
@@ -61,6 +67,9 @@ def gather_architecture_context(root: Path, level: int, container_id: str | None
         path.name for path in list_architecture_files(root) if path.name.startswith("c3-")
     ]
     return context
+
+
+# -- Call Claude and parse structured reply + suggested add_node buttons -------
 
 
 def run_spar(root: Path, request: SparRequest) -> SparResponse:

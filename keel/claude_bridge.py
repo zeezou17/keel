@@ -1,4 +1,10 @@
-"""Subprocess wrapper for the Claude Code CLI."""
+"""
+Subprocess wrapper for the Claude Code CLI.
+
+All AI features (init, sparring, impact assessment, drift, work packages) call
+`claude -p ... --output-format json` through this module rather than talking
+to an HTTP API directly.
+"""
 
 from __future__ import annotations
 
@@ -36,6 +42,10 @@ def _subprocess_kwargs(cwd: Path | None) -> dict[str, object]:
         "start_new_session": True,
         "env": env,
     }
+
+
+# -- Error types (mapped to HTTP 502 or CLI messages upstream) -----------------
+
 
 _AUTH_PATTERNS = (
     "not authenticated",
@@ -85,6 +95,9 @@ class KeelClaudeOutputError(KeelClaudeError):
         self.raw_result_text = raw_result_text
 
 
+# -- Pre-flight check (used by keel init) ------------------------------------
+
+
 def verify_claude_cli(cwd: Path | None = None) -> None:
     """
     Verify the Claude Code CLI is installed and authenticated.
@@ -118,6 +131,9 @@ def verify_claude_cli(cwd: Path | None = None) -> None:
             _combined_cli_output(completed),
             completed.returncode,
         )
+
+
+# -- Main invocation used by spar, assess, init, drift, work packages ---------
 
 
 def run_claude(
@@ -194,6 +210,9 @@ def run_claude(
             raw_payload=payload,
             raw_result_text=result_text,
         ) from exc
+
+
+# -- Output parsing helpers ----------------------------------------------------
 
 
 def format_validation_errors(errors: list[dict[str, object]]) -> str:

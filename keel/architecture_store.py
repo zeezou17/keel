@@ -19,6 +19,9 @@ class NodeNotFoundError(KeyError):
     """Raised when a node id is not present in any architecture file."""
 
 
+# -- Path resolution (C1/C2/C3 file names on disk) ---------------------------
+
+
 def architecture_dir(root: Path) -> Path:
     return root / ARCHITECTURE_DIR
 
@@ -38,6 +41,9 @@ def architecture_path(root: Path, level: int, container_id: str | None = None) -
             raise ValueError("container_id is required for level 3 architecture files.")
         return arch_dir / f"c3-{container_slug(container_id)}.json"
     raise ValueError(f"Unsupported architecture level: {level}")
+
+
+# -- Load/save whole diagram files -------------------------------------------
 
 
 def load_architecture(
@@ -60,6 +66,9 @@ def list_architecture_files(root: Path) -> list[Path]:
     if not arch_dir.exists():
         return []
     return sorted(arch_dir.glob("*.json"))
+
+
+# -- Node lookup and CRUD (used by API and sparring actions) -----------------
 
 
 def find_node_location(

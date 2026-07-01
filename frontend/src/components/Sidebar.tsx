@@ -1,3 +1,7 @@
+/**
+ * Left sidebar with tabs for Requirements, ADRs, and Characteristics.
+ * Each tab loads a separate panel component that edits `.keel/` markdown/yaml.
+ */
 import { useState } from "react";
 
 import type { Requirement } from "../api/client";

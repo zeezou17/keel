@@ -26,6 +26,9 @@ def main() -> None:
     """Keel orchestrates the non-code phases of the SDLC inside your git repo."""
 
 
+# -- keel init: scaffold .keel/ in a git repo --------------------------------
+
+
 @app.command()
 def init(
     path: Optional[Path] = typer.Option(
@@ -55,6 +58,9 @@ def init(
     written = run_init(path=path, description=description, skip_commit=skip_commit)
     root = (path or Path.cwd()).resolve()
     print_success_summary(written, root)
+
+
+# -- keel dev: local web UI + API for editing architecture -------------------
 
 
 @app.command()

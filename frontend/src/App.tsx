@@ -1,3 +1,9 @@
+/**
+ * Root layout for the Keel dev UI.
+ *
+ * Three columns: Sidebar (requirements/ADRs) | Canvas (C4 diagram) | Sparring (AI chat).
+ * Top toolbar handles C-level navigation, git dirty state, add node, and commit.
+ */
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
@@ -33,6 +39,8 @@ function slugify(value: string): string {
 }
 
 export default function App() {
+  // -- UI state (which C level, selection, loading, git dirty flag) ----------
+
   const [view, setView] = useState<ViewState>({ level: 1, label: "C1 Context" });
   const [architecture, setArchitecture] = useState<ArchitectureFile | null>(null);
   const [dirty, setDirty] = useState(false);
@@ -53,6 +61,8 @@ export default function App() {
     }
     return items;
   }, [view]);
+
+  // -- Load architecture JSON from the Python API when the view changes -------
 
   const loadView = useCallback(async (nextView: ViewState) => {
     setLoading(true);
@@ -98,6 +108,8 @@ export default function App() {
     },
     [refreshGitStatus, view.containerId, view.level],
   );
+
+  // -- Drill down: C1 system → C2 containers → C3 components ------------------
 
   const handleNodeOpen = useCallback(
     async (node: KeelNode) => {
@@ -148,6 +160,8 @@ export default function App() {
     await commitChanges();
     await refreshGitStatus();
   }, [refreshGitStatus]);
+
+  // -- Render: toolbar + sidebar + canvas + sparring panel --------------------
 
   if (loading && !architecture) {
     return <div className="app-shell">Loading architecture…</div>;

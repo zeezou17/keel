@@ -44,6 +44,9 @@ class BatchClassificationResult(BaseModel):
     classifications: list[FileClassification]
 
 
+# -- Path matching (map source files to diagram nodes) -------------------------
+
+
 def normalize_path(path: str) -> str:
     return path.replace("\\", "/").lstrip("./")
 
@@ -88,6 +91,9 @@ def find_matching_nodes(file_path: str, records: list[NodeRecord]) -> list[NodeR
 
 def file_matches_any_node(file_path: str, records: list[NodeRecord]) -> bool:
     return find_matching_nodes(file_path, records) != []
+
+
+# -- Git diff helpers (used by the drift GitHub Action) ------------------------
 
 
 def git_diff_names(base: str, head: str, cwd: Path | None = None) -> list[str]:
@@ -182,6 +188,9 @@ def update_paths_for_rename(
             break
 
     return updated_ids
+
+
+# -- Core drift detection on a PR file list ----------------------------------
 
 
 def detect_drift(

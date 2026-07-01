@@ -1,3 +1,10 @@
+"""
+Pydantic models for every file type Keel reads and writes under `.keel/`.
+
+These classes are the single source of truth for JSON/YAML/Markdown structure.
+The frontend uses matching TypeScript interfaces in frontend/src/api/client.ts.
+"""
+
 from __future__ import annotations
 
 import datetime

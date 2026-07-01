@@ -1,3 +1,9 @@
+/**
+ * Interactive C4 diagram in the center panel.
+ *
+ * Uses React Flow to render nodes/edges from architecture JSON. Dragging a
+ * node saves its position back to `.keel/architecture/` via the API.
+ */
 import {
   Background,
   Controls,

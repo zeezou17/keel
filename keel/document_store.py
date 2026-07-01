@@ -18,6 +18,9 @@ class DocumentNotFoundError(FileNotFoundError):
     """Raised when a Keel document cannot be found."""
 
 
+# -- Shared ID and path helpers ----------------------------------------------
+
+
 def _next_document_id(prefix: str, directory: Path, extension: str) -> str:
     if not directory.exists():
         return f"{prefix}001"
@@ -41,6 +44,9 @@ def _adr_path(root: Path, adr_id: str) -> Path:
 
 def _characteristic_path(root: Path, char_id: str) -> Path:
     return root / CHARACTERISTICS_DIR / f"{char_id}.yml"
+
+
+# -- Requirements ------------------------------------------------------------
 
 
 def list_requirements(root: Path) -> list[tuple[Requirement, str]]:
@@ -126,6 +132,9 @@ def _sync_requirement_links(
         write_keel_file(path, arch)
 
 
+# -- Architecture Decision Records (ADRs) --------------------------------------
+
+
 def list_adrs(root: Path) -> list[tuple[ADR, str]]:
     directory = root / DECISIONS_DIR
     if not directory.exists():
@@ -197,6 +206,9 @@ def _sync_adr_links(
         updated = node.model_copy(update={"adr_ids": adr_ids})
         arch.nodes = [updated if item.id == node_id else item for item in arch.nodes]
         write_keel_file(path, arch)
+
+
+# -- Quality characteristics (non-functional requirements) ---------------------
 
 
 def list_characteristics(root: Path) -> list[Characteristic]:

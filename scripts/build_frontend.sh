@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Build the React frontend and output static files into keel/static/.
+# Run this before `keel dev` if you change anything under frontend/.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

@@ -1,3 +1,8 @@
+/**
+ * Right-hand AI sparring chat (Cursor-style sessions in localStorage).
+ *
+ * Sends messages to POST /api/spar and can apply suggested diagram changes.
+ */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {

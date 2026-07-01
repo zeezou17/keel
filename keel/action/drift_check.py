@@ -1,4 +1,9 @@
-"""GitHub Action entry point for Keel drift detection."""
+"""GitHub Action entry point for Keel drift detection.
+
+Runs on pull requests: compares changed files against architecture node path
+globs, uses Claude to classify unmapped files, runs fitness-function checks,
+and can post a PR comment with the report.
+"""
 
 from __future__ import annotations
 
@@ -44,6 +49,9 @@ class DriftCheckReport(BaseModel):
     claude_calls: int
 
 
+# -- GitHub event parsing ----------------------------------------------------
+
+
 def load_github_event() -> dict[str, object]:
     event_path = os.environ.get("GITHUB_EVENT_PATH")
     if not event_path:
@@ -60,6 +68,9 @@ def get_pull_request_context(event: dict[str, object]) -> tuple[str, str, int]:
     head_sha = str(pull_request["head"]["sha"])
     pr_number = int(pull_request["number"])
     return base_sha, head_sha, pr_number
+
+
+# -- Main drift pipeline (diff → classify → fitness checks) ------------------
 
 
 def run_drift_check(root: Path | None = None) -> DriftCheckReport:
@@ -279,6 +290,9 @@ def commit_auto_updates(root: Path, report: DriftCheckReport) -> None:
     token = os.environ.get("GITHUB_TOKEN")
     if token:
         subprocess.run(["git", "push"], cwd=root, check=True, env={**os.environ, "GITHUB_TOKEN": token})
+
+
+# -- CLI entry when run as a GitHub Action -------------------------------------
 
 
 def main() -> int:

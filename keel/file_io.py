@@ -17,6 +17,9 @@ T = TypeVar("T", bound=BaseModel)
 _FRONTMATTER_PATTERN = re.compile(r"^---\s*\n(.*?)\n---\s*(?:\n|$)(.*)$", re.DOTALL)
 
 
+# -- JSON and YAML files (architecture, characteristics) ---------------------
+
+
 def write_keel_file(path: Path, model: BaseModel) -> None:
     """
     Validate `model`, then write atomically (temp file + os.replace).
@@ -76,6 +79,9 @@ def read_keel_file(path: Path, model_class: Type[T]) -> T:
         raise ValueError(f"Unsupported .keel/ file extension: {suffix}")
 
     return model_class.model_validate(data)
+
+
+# -- Markdown with YAML frontmatter (requirements, ADRs, work packages) ---------
 
 
 def write_keel_markdown(path: Path, model: BaseModel, body: str = "") -> None:

@@ -1,3 +1,7 @@
+/**
+ * Floating panel when a diagram node is selected.
+ * Shows metadata and can generate a work package (WP-*.md) via the API.
+ */
 import { useState } from "react";
 
 import { generateWorkPackage, type KeelNode } from "../api/client";
