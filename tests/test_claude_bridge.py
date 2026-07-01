@@ -91,6 +91,30 @@ def test_run_claude_passes_cwd_to_subprocess(
     assert mock_run.call_args.kwargs["cwd"] == str(cwd)
 
 
+@patch("keel.claude_bridge.shutil.which", return_value="/usr/bin/claude")
+@patch("keel.claude_bridge.subprocess.run")
+def test_run_claude_detaches_from_terminal_stdin(
+    mock_run: object,
+    _mock_which: object,
+) -> None:
+    mock_run.return_value = subprocess.CompletedProcess(
+        args=["claude"],
+        returncode=0,
+        stdout=_success_stdout("ok"),
+        stderr="",
+    )
+
+    run_claude("prompt")
+
+    kwargs = mock_run.call_args.kwargs
+    assert kwargs["stdin"] is subprocess.DEVNULL
+    assert kwargs["start_new_session"] is True
+    assert kwargs["capture_output"] is True
+    assert kwargs["env"]["CI"] == "true"
+    assert kwargs["env"]["NO_COLOR"] == "1"
+    assert kwargs["env"]["TERM"] == "dumb"
+
+
 @patch("keel.claude_bridge.shutil.which", return_value=None)
 def test_run_claude_raises_not_found_when_binary_missing(_mock_which: object) -> None:
     with pytest.raises(KeelClaudeNotFoundError, match="not found on PATH"):
