@@ -138,6 +138,40 @@ body {
   margin-top: 0.75rem;
 }
 
+.node-detail-expand-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin: 0.75rem 0;
+  padding: 0.65rem;
+  background: #f0f4f8;
+  border-radius: 8px;
+}
+
+.node-detail-expand-button {
+  border: 0;
+  background: #2a9d8f;
+  color: white;
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+  cursor: pointer;
+  font-weight: 500;
+  text-align: left;
+}
+
+.node-detail-expand-button.expanded {
+  background: #486581;
+}
+
+.node-detail-expand-button:hover {
+  filter: brightness(1.1);
+}
+
+.node-detail-expand-hint {
+  font-size: 0.8rem;
+  color: #627d98;
+}
+
 .workspace {
   display: flex;
   flex: 1;
@@ -701,4 +735,87 @@ body {
   border-radius: 6px;
   padding: 0.5rem 0.85rem;
   cursor: pointer;
+}
+
+/* -- Expandable node (FP-003 selective drill-down) -------------------------- */
+
+.expandable-node {
+  font-family: Inter, system-ui, sans-serif;
+}
+
+.expandable-node-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.expandable-node-chevron {
+  border: 0;
+  background: transparent;
+  color: #627d98;
+  font-size: 0.7rem;
+  padding: 2px 4px;
+  cursor: pointer;
+  border-radius: 4px;
+  line-height: 1;
+  transition: background 0.15s ease;
+}
+
+.expandable-node-chevron:hover {
+  background: rgba(98, 125, 152, 0.15);
+  color: #243b53;
+}
+
+.expandable-node-chevron-placeholder {
+  width: 18px;
+}
+
+.expandable-node-label {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: #102a43;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.expandable-node-type {
+  font-size: 0.75rem;
+  color: #627d98;
+  text-transform: capitalize;
+  margin-top: 2px;
+  padding-left: 24px;
+}
+
+.expandable-node-depth-indicator {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  font-size: 0.65rem;
+  color: #829ab1;
+  background: rgba(255, 255, 255, 0.8);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+/* -- Collapse All toolbar button -------------------------------------------- */
+
+.collapse-all-button {
+  border: 0;
+  background: #486581;
+  color: white;
+  border-radius: 6px;
+  padding: 0.45rem 0.75rem;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.collapse-all-button:hover {
+  background: #334e68;
+}
+
+.collapse-all-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }

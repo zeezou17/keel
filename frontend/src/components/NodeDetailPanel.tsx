@@ -1,6 +1,8 @@
 /**
  * Floating panel when a diagram node is selected.
- * Shows metadata and can generate a work package (WP-*.md) via the API.
+ * Shows metadata, expand/collapse controls, and work package generation.
+ *
+ * FP-003: Replaced "Drill down" with Expand/Collapse for selective drill-down.
  */
 import { useState } from "react";
 
@@ -8,16 +10,20 @@ import { generateWorkPackage, type KeelNode } from "../api/client";
 
 interface NodeDetailPanelProps {
   node: KeelNode | null;
-  canDrillDown: boolean;
-  onDrillDown: (node: KeelNode) => void;
+  isExpanded: boolean;
+  canExpand: boolean;
+  onExpand: (node: KeelNode) => void;
+  onCollapse: (node: KeelNode) => void;
   onClose: () => void;
   onGenerated: () => void;
 }
 
 export function NodeDetailPanel({
   node,
-  canDrillDown,
-  onDrillDown,
+  isExpanded,
+  canExpand,
+  onExpand,
+  onCollapse,
   onClose,
   onGenerated,
 }: NodeDetailPanelProps) {
@@ -53,6 +59,16 @@ export function NodeDetailPanel({
     }
   };
 
+  const handleExpandCollapse = () => {
+    if (isExpanded) {
+      onCollapse(node);
+    } else {
+      onExpand(node);
+    }
+  };
+
+  const childLevelLabel = node.type === "system" ? "containers" : "components";
+
   return (
     <div className="node-detail-panel">
       <div className="node-detail-header">
@@ -61,8 +77,31 @@ export function NodeDetailPanel({
       </div>
       <p className="node-detail-meta">
         <code>{node.id}</code> · {node.type}
+        {node.level > 1 && (
+          <span style={{ marginLeft: "0.5rem", color: "#829ab1" }}>
+            · C{node.level}
+          </span>
+        )}
       </p>
       <p>{node.description}</p>
+
+      {canExpand && (
+        <div className="node-detail-expand-section">
+          <button
+            className={`node-detail-expand-button ${isExpanded ? "expanded" : ""}`}
+            onClick={handleExpandCollapse}
+          >
+            {isExpanded ? "▼" : "▶"}{" "}
+            {isExpanded ? `Collapse ${childLevelLabel}` : `Expand ${childLevelLabel}`}
+          </button>
+          {!isExpanded && (
+            <span className="node-detail-expand-hint">
+              Show {childLevelLabel} inside this {node.type}
+            </span>
+          )}
+        </div>
+      )}
+
       <div className="node-detail-section">
         <strong>Linked requirements</strong>
         {linkedRequirements.length > 0 ? (
@@ -78,9 +117,6 @@ export function NodeDetailPanel({
       {error ? <div className="panel-error">{error}</div> : null}
       {message ? <div className="node-detail-success">{message}</div> : null}
       <div className="node-detail-actions">
-        {canDrillDown ? (
-          <button onClick={() => onDrillDown(node)}>Drill down</button>
-        ) : null}
         <button onClick={() => void handleGenerate()} disabled={loading}>
           {loading ? "Generating…" : "Generate work package"}
         </button>
