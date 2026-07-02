@@ -1,6 +1,6 @@
 # FP-003 — Selective drill-down (expand in place)
 
-**Status:** Planned  
+**Status:** In Progress  
 **Priority:** Next  
 **Depends on:** WP-004  
 **Related:** [FP-002](planned-canvas-manual-editing.md) (editing inside expanded groups)
