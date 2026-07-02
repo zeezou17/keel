@@ -12,7 +12,7 @@ Local dev experience: FastAPI backend serving `.keel/` data and a React + React 
 
 - **`keel dev`** — serves API + built frontend on port 3141 (default)
 - **Canvas** — render nodes/edges, drag to reposition (persists `position_x` / `position_y`)
-- **C4 navigation** — breadcrumbs C1 → C2 → C3 drill-down
+- **C4 navigation** — breadcrumbs C1 → C2 → C3 drill-down (full level replace on double-click)
 - **Toolbar** — add node, git dirty indicator, commit `.keel/` changes
 - **API** — CRUD for architecture levels, nodes, git status, commit
 
@@ -46,4 +46,5 @@ Local dev experience: FastAPI backend serving `.keel/` data and a React + React 
 - **Partial:** API supports `PUT`/`DELETE` node but UI does not expose full edit/delete (see [FP-002](planned-canvas-manual-editing.md))
 - No UI to add, edit, or delete edges manually
 - Sidebars are fixed width (see [FP-001](planned-resizable-sidebars.md))
+- Drill-down replaces the whole canvas instead of expanding one branch in place (see [FP-003](planned-selective-drill-down.md))
 - Node detail panel is read-only except work-package generation
