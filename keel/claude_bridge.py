@@ -437,8 +437,8 @@ def _raise_cli_failure(stdout: str, combined_output: str, returncode: int) -> No
 def _parse_result_payload(result_text: str) -> Any:
     """Parse the result field from Claude's JSON response.
 
-    Handles both raw JSON and JSON wrapped in markdown code fences,
-    which Claude sometimes returns.
+    Handles raw JSON, JSON wrapped in markdown code fences, and JSON
+    embedded in surrounding prose (which Claude sometimes returns).
 
     Args:
         result_text: The ``result`` field from the Claude CLI response.
@@ -453,4 +453,32 @@ def _parse_result_payload(result_text: str) -> Any:
     fence_match = re.match(r"^```(?:json)?\s*\n?(.*)\n?```$", text, flags=re.DOTALL)
     if fence_match:
         text = fence_match.group(1).strip()
-    return json.loads(text)
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        extracted = _extract_json_object(text)
+        if extracted is not None:
+            return extracted
+        raise
+
+
+def _extract_json_object(text: str) -> Any | None:
+    """Try to parse the first JSON object embedded in free-form text.
+
+    Used when Claude returns prose or commentary around a JSON payload
+    instead of raw JSON in the ``result`` field.
+
+    Args:
+        text: Free-form text that may contain a JSON object.
+
+    Returns:
+        The parsed dict if found, otherwise None.
+    """
+    start = text.find("{")
+    if start < 0:
+        return None
+    try:
+        payload, _ = json.JSONDecoder().raw_decode(text[start:])
+    except json.JSONDecodeError:
+        return None
+    return payload if isinstance(payload, dict) else None

@@ -246,3 +246,23 @@ def test_run_claude_parses_json_inside_markdown_fence(
 
     assert isinstance(result, SampleSchema)
     assert result.answer == "fenced"
+
+
+@patch("keel.claude_bridge.shutil.which", return_value="/usr/bin/claude")
+@patch("keel.claude_bridge.subprocess.run")
+def test_run_claude_parses_json_embedded_in_prose(
+    mock_run: object,
+    _mock_which: object,
+) -> None:
+    wrapped = 'Here is the answer:\n\n{"answer": "embedded"}\n\nHope that helps.'
+    mock_run.return_value = subprocess.CompletedProcess(
+        args=["claude"],
+        returncode=0,
+        stdout=_success_stdout(wrapped),
+        stderr="",
+    )
+
+    result = run_claude("prompt", output_schema=SampleSchema)
+
+    assert isinstance(result, SampleSchema)
+    assert result.answer == "embedded"

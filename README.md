@@ -13,6 +13,8 @@ Keel orchestrates the non-code phases of the SDLC inside your repository:
 
 All data lives under `.keel/` in your repo so architecture evolves with your codebase.
 
+See [features/README.md](features/README.md) for shipped work packages, enhancements, and the roadmap.
+
 ## Prerequisites
 
 | Requirement | Used for |
