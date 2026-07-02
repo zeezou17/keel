@@ -47,13 +47,28 @@ export function loadSparStore(): SparStore {
     if (!Array.isArray(parsed.sessions)) {
       return emptyStore();
     }
-    return {
+    return normalizeSparStore({
       activeSessionId: parsed.activeSessionId ?? null,
       sessions: parsed.sessions,
-    };
+    });
   } catch {
     return emptyStore();
   }
+}
+
+/** Ensure activeSessionId points at a real session when chats exist. */
+export function normalizeSparStore(store: SparStore): SparStore {
+  if (store.sessions.length === 0) {
+    return emptyStore();
+  }
+
+  const validIds = new Set(store.sessions.map((session) => session.id));
+  let activeSessionId = store.activeSessionId;
+  if (!activeSessionId || !validIds.has(activeSessionId)) {
+    activeSessionId = sortedSessions(store.sessions)[0].id;
+  }
+
+  return { ...store, activeSessionId };
 }
 
 export function saveSparStore(store: SparStore): void {
@@ -81,15 +96,16 @@ export function ensureActiveSession(
   viewLevel: number,
   containerId: string | null,
 ): { store: SparStore; session: SparSession } {
-  const active = store.sessions.find((item) => item.id === store.activeSessionId);
+  const normalized = normalizeSparStore(store);
+  const active = normalized.sessions.find((item) => item.id === normalized.activeSessionId);
   if (active) {
-    return { store, session: active };
+    return { store: normalized, session: active };
   }
 
   const session = createSession(viewLevel, containerId);
   const next: SparStore = {
     activeSessionId: session.id,
-    sessions: [session, ...store.sessions],
+    sessions: [session, ...normalized.sessions],
   };
   return { store: next, session };
 }

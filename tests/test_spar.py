@@ -136,6 +136,110 @@ def test_spar_includes_conversation_history_in_prompt(
 
 
 @patch("keel.spar.run_claude")
+def test_spar_retries_until_valid_response(
+    mock_run_claude: object,
+    client: TestClient,
+    repo_with_architecture: Path,
+) -> None:
+    from keel.claude_bridge import KeelClaudeOutputError
+
+    mock_run_claude.side_effect = [
+        KeelClaudeOutputError(
+            "Claude Code CLI `result` field is not valid JSON.",
+            raw_result_text="I recommend adding a cache layer.",
+        ),
+        SparResponse(reply="A cache would help.", actions=[]),
+    ]
+
+    response = client.post(
+        "/api/spar",
+        json={"message": "Should we add a cache?", "level": 2},
+    )
+
+    assert response.status_code == 200
+    assert mock_run_claude.call_count == 2
+    assert "cache" in response.json()["reply"].lower()
+
+
+@patch("keel.spar.run_claude")
+def test_spar_reports_detailed_failure_after_retries(
+    mock_run_claude: object,
+    client: TestClient,
+    repo_with_architecture: Path,
+) -> None:
+    from keel.claude_bridge import KeelClaudeOutputError
+
+    mock_run_claude.side_effect = KeelClaudeOutputError(
+        "Claude Code CLI `result` field is not valid JSON.",
+        raw_result_text="Plain prose only.",
+    )
+
+    response = client.post(
+        "/api/spar",
+        json={"message": "hello", "level": 1},
+    )
+
+    assert response.status_code == 502
+    detail = response.json()["detail"]
+    assert "after 4 attempts" in detail
+    assert "Attempt summary" in detail
+    assert mock_run_claude.call_count == 4
+
+
+def test_build_spar_prompt_includes_required_json_contract() -> None:
+    from keel.spar import _build_spar_prompt
+
+    prompt = _build_spar_prompt("Should we cache?", {"view_level": 2, "container_id": None}, [])
+
+    assert "INVALID responses" in prompt
+    assert '"reply"' in prompt
+    assert '"actions"' in prompt
+    assert "node_" in prompt
+    assert "Return JSON only" in prompt
+    assert "Markdown" in prompt
+    assert "bullet lists" in prompt or "bullet list" in prompt
+
+
+@patch("keel.spar.run_claude")
+def test_spar_retries_after_semantic_validation_failure(
+    mock_run_claude: object,
+    client: TestClient,
+    repo_with_architecture: Path,
+) -> None:
+    invalid_node = KeelNode(
+        id="bad-id",
+        type=NodeType.system,
+        level=NodeLevel.c2,
+        name="Wrong",
+        description="Level/type mismatch",
+        paths=["src/**"],
+    )
+    mock_run_claude.side_effect = [
+        SparResponse(
+            reply="Try this.",
+            actions=[
+                SparAction(
+                    type=SparActionType.add_node,
+                    label="Add wrong node",
+                    level=2,
+                    node=invalid_node,
+                )
+            ],
+        ),
+        SparResponse(reply="Fixed guidance.", actions=[]),
+    ]
+
+    response = client.post(
+        "/api/spar",
+        json={"message": "Add a container", "level": 2},
+    )
+
+    assert response.status_code == 200
+    assert mock_run_claude.call_count == 2
+    assert response.json()["reply"] == "Fixed guidance."
+
+
+@patch("keel.spar.run_claude")
 def test_spar_action_applied_via_create_node_endpoint(
     mock_run_claude: object,
     client: TestClient,

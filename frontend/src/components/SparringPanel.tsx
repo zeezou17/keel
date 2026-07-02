@@ -19,6 +19,7 @@ import {
   ensureActiveSession,
   formatSessionTime,
   loadSparStore,
+  normalizeSparStore,
   saveSparStore,
   selectSession,
   sortedSessions,
@@ -28,6 +29,7 @@ import {
   type SparSession,
   type SparStore,
 } from "../spar/sessions";
+import { SparMessageContent } from "./SparMessageContent";
 
 interface SparringPanelProps {
   level: number;
@@ -55,7 +57,7 @@ export function SparringPanel({
   onToggleCollapsed,
   onArchitectureUpdated,
 }: SparringPanelProps) {
-  const [store, setStore] = useState<SparStore>(() => loadSparStore());
+  const [store, setStore] = useState<SparStore>(() => normalizeSparStore(loadSparStore()));
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [sessionsOpen, setSessionsOpen] = useState(false);
@@ -155,9 +157,11 @@ export function SparringPanel({
     const nextTitle =
       priorMessages.length === 0 ? titleFromMessage(trimmed) : session.title;
 
+    const sessionId = session.id;
+
     const withUser = updateSessionMessages(
       workingStore,
-      session.id,
+      sessionId,
       nextMessages,
       nextTitle,
     );
@@ -173,7 +177,7 @@ export function SparringPanel({
         toApiHistory(priorMessages),
       );
       setStore((current) =>
-        updateSessionMessages(current, session.id, [
+        updateSessionMessages(current, sessionId, [
           ...nextMessages,
           {
             id: crypto.randomUUID(),
@@ -185,7 +189,7 @@ export function SparringPanel({
       );
     } catch (err) {
       setStore((current) =>
-        updateSessionMessages(current, session.id, [
+        updateSessionMessages(current, sessionId, [
           ...nextMessages,
           {
             id: crypto.randomUUID(),
@@ -323,7 +327,7 @@ export function SparringPanel({
             <p className="spar-empty-title">Architecture sparring</p>
             <p className="spar-empty">
               Ask about trade-offs, missing containers, or drift risks. Chats are saved locally in
-              this browser.
+              this browser — use the title dropdown above to switch between previous conversations.
             </p>
           </div>
         ) : null}
@@ -332,7 +336,11 @@ export function SparringPanel({
             <div className="spar-message-label">
               {message.role === "user" ? "You" : message.role === "error" ? "Error" : "Assistant"}
             </div>
-            <div className="spar-message-body">{message.content}</div>
+            {message.role === "assistant" || message.role === "error" ? (
+              <SparMessageContent content={message.content} />
+            ) : (
+              <div className="spar-message-body">{message.content}</div>
+            )}
             {message.actions?.map((action) => (
               <button
                 key={`${message.id}-${action.label}`}

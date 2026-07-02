@@ -544,6 +544,67 @@ body {
   font-size: 0.92rem;
 }
 
+.spar-message.assistant .spar-message-body,
+.spar-message.error .spar-message-body {
+  white-space: normal;
+}
+
+.spar-markdown > :first-child {
+  margin-top: 0;
+}
+
+.spar-markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.spar-md-h3,
+.spar-md-h4,
+.spar-message-body h3,
+.spar-message-body h4 {
+  margin: 0.85rem 0 0.4rem;
+  font-size: 0.95rem;
+  color: #243b53;
+  font-weight: 600;
+}
+
+.spar-md-h3:first-child,
+.spar-md-h4:first-child,
+.spar-message-body h3:first-child,
+.spar-message-body h4:first-child {
+  margin-top: 0;
+}
+
+.spar-md-p,
+.spar-message-body p {
+  margin: 0 0 0.55rem;
+}
+
+.spar-md-ul,
+.spar-md-ol,
+.spar-message-body ul {
+  margin: 0.35rem 0 0.65rem;
+  padding-left: 1.35rem;
+}
+
+.spar-md-li,
+.spar-message-body li {
+  margin-bottom: 0.4rem;
+}
+
+.spar-md-strong,
+.spar-message-body strong {
+  color: #102a43;
+  font-weight: 600;
+}
+
+.spar-md-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.85em;
+  background: #eef2f6;
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+}
+
 .spar-message p {
   margin: 0 0 0.5rem;
 }
