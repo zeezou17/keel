@@ -10,6 +10,7 @@ Living index of Keel capabilities — what is shipped, what was enhanced after t
 | **Enhanced** | Original work package done; follow-up improvements landed |
 | **Partial** | Backend or UI exists but human workflow is incomplete |
 | **Planned** | Not started; spec drafted in this folder |
+| **Backlog** | Idea captured; research or design needed before implementation |
 
 ## Shipped features (work packages)
 
@@ -31,6 +32,7 @@ Living index of Keel capabilities — what is shipped, what was enhanced after t
 | FP-001 | [Resizable sidebars](planned-resizable-sidebars.md) | Planned | Drag-to-resize left docs panel and right sparring panel |
 | FP-002 | [Canvas manual editing](planned-canvas-manual-editing.md) | Planned | Edit/delete nodes and add edges manually on the diagram |
 | FP-003 | [Selective drill-down](planned-selective-drill-down.md) | Planned | Expand one branch in place; keep sibling nodes visible; multi-expand + collapse |
+| FP-004 | [UML and multi-viewpoint diagrams](planned-uml-and-multi-viewpoint-diagrams.md) | Backlog | UML (class, sequence, …) and other notations beyond C4; research phase first |
 
 ## How to use this folder
 

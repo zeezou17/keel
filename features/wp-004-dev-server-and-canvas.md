@@ -47,4 +47,5 @@ Local dev experience: FastAPI backend serving `.keel/` data and a React + React 
 - No UI to add, edit, or delete edges manually
 - Sidebars are fixed width (see [FP-001](planned-resizable-sidebars.md))
 - Drill-down replaces the whole canvas instead of expanding one branch in place (see [FP-003](planned-selective-drill-down.md))
+- C4-only notation today — no UML or other viewpoints yet (see [FP-004](planned-uml-and-multi-viewpoint-diagrams.md))
 - Node detail panel is read-only except work-package generation
