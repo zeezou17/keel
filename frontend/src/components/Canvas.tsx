@@ -3,7 +3,12 @@
  *
  * Uses React Flow to render nodes/edges with selective drill-down (FP-003).
  * Supports expand-in-place via chevron controls on system/container nodes.
- * Auto-layouts nodes using dagre when expansion state changes.
+ * 
+ * Layout behavior:
+ * - Users can freely drag and position any node
+ * - When expanding, only overlapping nodes are pushed out of the way
+ * - Child nodes are laid out in a grid inside the group
+ * - Positions are preserved and saved
  */
 import {
   Background,
@@ -23,7 +28,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ArchitectureFile, KeelNode } from "../api/client";
 import type { ComposedNode, ExpansionState } from "../canvas/expansion";
 import { canNodeExpand } from "../canvas/expansion";
-import { applyHierarchicalLayout } from "../canvas/layout";
+import {
+  applyInitialLayout,
+  layoutChildrenInGroup,
+  calculateGroupFrame,
+  calculateGroupBounds,
+  pushOverlappingNodes,
+} from "../canvas/layout";
 import { ExpandableNode, type ExpandableNodeData } from "./ExpandableNode";
 
 const GROUP_COLORS: Record<number, { border: string; background: string }> = {
@@ -42,7 +53,7 @@ interface CanvasProps {
   highlightedNodeIds?: string[];
   selectedNodeId?: string | null;
   onArchitectureChange: (architecture: ArchitectureFile, level: number, containerId?: string | null) => void;
-  onNodeSelect?: (node: KeelNode) => void;
+  onNodeSelect?: (node: KeelNode | null) => void;
   onNodeExpand?: (node: KeelNode) => void;
   onNodeCollapse?: (node: KeelNode) => void;
   onNodeDoubleClick?: (node: KeelNode) => void;
@@ -63,14 +74,15 @@ function CanvasInner({
   const { fitView } = useReactFlow();
   const highlightSet = useMemo(() => new Set(highlightedNodeIds), [highlightedNodeIds]);
   const previousExpansionRef = useRef<Set<string>>(new Set());
-  const isAnimatingRef = useRef(false);
+  const [nodes, setNodes] = useState<Node[]>([]);
+  const [isInitialized, setIsInitialized] = useState(false);
 
   const isEmphasized = useCallback(
     (nodeId: string) => highlightSet.has(nodeId) || nodeId === selectedNodeId,
     [highlightSet, selectedNodeId],
   );
 
-  // Build React Flow nodes from composed nodes (with expansion) or raw architecture
+  // Build React Flow nodes from architecture data
   const buildNodes = useCallback((): Node[] => {
     if (composedNodes && expansionState) {
       return buildComposedNodes(composedNodes, expansionState, isEmphasized);
@@ -78,16 +90,22 @@ function CanvasInner({
     return buildSimpleNodes(architecture.nodes, isEmphasized);
   }, [composedNodes, expansionState, architecture.nodes, isEmphasized]);
 
-  function buildSimpleNodes(nodes: KeelNode[], checkEmphasized: (id: string) => boolean): Node[] {
-    return nodes.map((node) => {
+  function buildSimpleNodes(archNodes: KeelNode[], checkEmphasized: (id: string) => boolean): Node[] {
+    return archNodes.map((node) => {
       const hasChildren = canNodeExpand(node);
       const isExpanded = expansionState?.expandedNodeIds.has(node.id) ?? false;
       const emphasized = checkEmphasized(node.id);
 
+      // Use saved position or default to 0,0 (will be laid out)
+      const position = {
+        x: node.position_x ?? 0,
+        y: node.position_y ?? 0,
+      };
+
       return {
         id: node.id,
         type: "expandable",
-        position: { x: 0, y: 0 }, // Will be set by layout
+        position,
         data: {
           label: node.name,
           nodeType: node.type,
@@ -102,9 +120,7 @@ function CanvasInner({
           onExpand: hasChildren ? () => onNodeExpand?.(node) : undefined,
           onCollapse: isExpanded ? () => onNodeCollapse?.(node) : undefined,
         } satisfies ExpandableNodeData & { raw: KeelNode; parentGroupId: string | null },
-        style: {
-          zIndex: 10,
-        },
+        style: { zIndex: 10 },
       };
     });
   }
@@ -116,67 +132,17 @@ function CanvasInner({
   ): Node[] {
     const result: Node[] = [];
 
-    // First, create group frames for expanded nodes
-    for (const node of composed) {
-      if (node.isExpanded && node.hasChildren) {
-        const children = composed.filter((n) => n.parentGroupId === node.id);
-        if (children.length > 0) {
-          const colors = GROUP_COLORS[node.depth] ?? GROUP_COLORS[1];
-
-          // Group frame (will be positioned by layout)
-          result.push({
-            id: `group-${node.id}`,
-            type: "default",
-            position: { x: 0, y: 0 },
-            data: { label: "", parentGroupId: null },
-            style: {
-              width: 300,
-              height: 200,
-              border: `2px dashed ${colors.border}`,
-              borderRadius: 12,
-              background: colors.background,
-              zIndex: 0,
-              pointerEvents: "none" as const,
-            },
-            selectable: false,
-            draggable: false,
-          });
-
-          // Group header
-          result.push({
-            id: `group-header-${node.id}`,
-            type: "default",
-            position: { x: 0, y: 0 },
-            data: {
-              label: `${node.name} · C${node.depth + 1} · ${children.length} children`,
-              parentGroupId: null,
-            },
-            style: {
-              background: colors.border,
-              color: "#ffffff",
-              padding: "4px 10px",
-              borderRadius: "8px 8px 0 0",
-              fontSize: "0.8rem",
-              fontWeight: 600,
-              border: "none",
-              zIndex: 1,
-              pointerEvents: "none" as const,
-            },
-            selectable: false,
-            draggable: false,
-          });
-        }
-      }
-    }
-
-    // Then create actual nodes
+    // Build regular nodes first (using saved positions)
     for (const node of composed) {
       const emphasized = checkEmphasized(node.id);
 
       result.push({
         id: node.id,
         type: "expandable",
-        position: { x: 0, y: 0 }, // Will be set by layout
+        position: {
+          x: node.position_x ?? 0,
+          y: node.position_y ?? 0,
+        },
         data: {
           label: node.name,
           nodeType: node.type,
@@ -191,10 +157,66 @@ function CanvasInner({
           onExpand: node.hasChildren && !node.isExpanded ? () => onNodeExpand?.(node) : undefined,
           onCollapse: node.isExpanded ? () => onNodeCollapse?.(node) : undefined,
         } satisfies ExpandableNodeData & { raw: KeelNode; parentGroupId: string | null | undefined },
-        style: {
-          zIndex: 10 + node.depth,
-        },
+        style: { zIndex: 10 + node.depth },
       });
+    }
+
+    // Add group frames for expanded nodes
+    for (const node of composed) {
+      if (node.isExpanded && node.hasChildren) {
+        const children = result.filter((n) => {
+          const data = n.data as { parentGroupId?: string };
+          return data.parentGroupId === node.id;
+        });
+
+        if (children.length > 0) {
+          const parentNode = result.find((n) => n.id === node.id);
+          if (parentNode) {
+            const colors = GROUP_COLORS[node.depth] ?? GROUP_COLORS[1];
+            const frame = calculateGroupFrame(parentNode, children);
+
+            result.push({
+              id: `group-${node.id}`,
+              type: "default",
+              position: frame.position,
+              data: { label: "" },
+              style: {
+                width: frame.width,
+                height: frame.height,
+                border: `2px dashed ${colors.border}`,
+                borderRadius: 12,
+                background: colors.background,
+                zIndex: 0,
+                pointerEvents: "none" as const,
+              },
+              selectable: false,
+              draggable: false,
+            });
+
+            result.push({
+              id: `group-header-${node.id}`,
+              type: "default",
+              position: { x: frame.position.x, y: frame.position.y - 28 },
+              data: {
+                label: `${node.name} · C${node.depth + 1} · ${children.length} children`,
+              },
+              style: {
+                background: colors.border,
+                color: "#ffffff",
+                padding: "4px 10px",
+                borderRadius: "8px 8px 0 0",
+                fontSize: "0.8rem",
+                fontWeight: 600,
+                border: "none",
+                zIndex: 1,
+                pointerEvents: "none" as const,
+              },
+              selectable: false,
+              draggable: false,
+            });
+          }
+        }
+      }
     }
 
     return result;
@@ -210,82 +232,172 @@ function CanvasInner({
     }));
   }, [architecture.edges]);
 
-  // Build and layout nodes
-  const rawNodes = useMemo(() => buildNodes(), [buildNodes]);
   const edges = useMemo(() => buildEdges(), [buildEdges]);
 
-  // Apply layout
-  const layoutedNodes = useMemo(() => {
-    const expandedIds = expansionState?.expandedNodeIds ?? new Set();
-    return applyHierarchicalLayout(rawNodes, edges, expandedIds);
-  }, [rawNodes, edges, expansionState?.expandedNodeIds]);
-
-  const [nodes, setNodes] = useState<Node[]>(layoutedNodes);
-
-  // Animate layout changes when expansion state changes
+  // Initialize nodes and handle expansion changes
   useEffect(() => {
+    const rawNodes = buildNodes();
     const currentExpanded = expansionState?.expandedNodeIds ?? new Set();
     const previousExpanded = previousExpansionRef.current;
 
-    // Check if expansion state actually changed
-    const expansionChanged =
-      currentExpanded.size !== previousExpanded.size ||
-      [...currentExpanded].some((id) => !previousExpanded.has(id)) ||
-      [...previousExpanded].some((id) => !currentExpanded.has(id));
+    // Check what changed
+    const newlyExpanded = [...currentExpanded].filter((id) => !previousExpanded.has(id));
+    const newlyCollapsed = [...previousExpanded].filter((id) => !currentExpanded.has(id));
+    const expansionChanged = newlyExpanded.length > 0 || newlyCollapsed.length > 0;
 
-    if (expansionChanged && !isAnimatingRef.current) {
-      isAnimatingRef.current = true;
-      const startNodes = nodes;
-      const endNodes = layoutedNodes;
-      const duration = 300;
-      const startTime = performance.now();
+    if (!isInitialized) {
+      // First render - apply initial layout to nodes without positions
+      const layoutedNodes = applyInitialLayout(rawNodes);
+      setNodes(layoutedNodes);
+      setIsInitialized(true);
+      previousExpansionRef.current = new Set(currentExpanded);
 
-      const animate = (currentTime: number) => {
-        const elapsed = currentTime - startTime;
-        const progress = Math.min(elapsed / duration, 1);
-        const eased = easeInOutCubic(progress);
+      // Fit view after initial render
+      setTimeout(() => fitView({ padding: 0.2 }), 100);
+      return;
+    }
 
-        const interpolatedNodes = endNodes.map((endNode) => {
-          const startNode = startNodes.find((n) => n.id === endNode.id);
-          if (!startNode) {
-            return endNode;
-          }
+    if (expansionChanged) {
+      // Handle expansion change
+      let updatedNodes = [...rawNodes];
 
-          return {
-            ...endNode,
-            position: {
-              x: startNode.position.x + (endNode.position.x - startNode.position.x) * eased,
-              y: startNode.position.y + (endNode.position.y - startNode.position.y) * eased,
-            },
-          };
+      // For newly expanded nodes, layout children and push overlapping siblings
+      for (const expandedId of newlyExpanded) {
+        const parentNode = updatedNodes.find((n) => n.id === expandedId);
+        if (!parentNode) continue;
+
+        // Find children of this node
+        const childNodes = updatedNodes.filter((n) => {
+          const data = n.data as { parentGroupId?: string };
+          return data.parentGroupId === expandedId;
         });
 
-        setNodes(interpolatedNodes);
+        if (childNodes.length > 0) {
+          // Layout children in grid
+          const childPositions = layoutChildrenInGroup(parentNode, childNodes);
+          updatedNodes = updatedNodes.map((n) => {
+            const newPos = childPositions.get(n.id);
+            return newPos ? { ...n, position: newPos } : n;
+          });
 
-        if (progress < 1) {
-          requestAnimationFrame(animate);
-        } else {
-          isAnimatingRef.current = false;
-          // Fit view after animation completes
-          setTimeout(() => fitView({ padding: 0.2, duration: 200 }), 50);
+          // Calculate group bounds and push overlapping nodes
+          const groupBounds = calculateGroupBounds(parentNode, childNodes);
+          const pushPositions = pushOverlappingNodes(updatedNodes, expandedId, groupBounds);
+          updatedNodes = updatedNodes.map((n) => {
+            const newPos = pushPositions.get(n.id);
+            return newPos ? { ...n, position: newPos } : n;
+          });
         }
-      };
+      }
 
-      requestAnimationFrame(animate);
+      // Update group frames based on new positions
+      updatedNodes = updateGroupFrames(updatedNodes, currentExpanded);
+
+      // Animate to new positions
+      animateToPositions(nodes, updatedNodes, () => {
+        setNodes(updatedNodes);
+        setTimeout(() => fitView({ padding: 0.2, duration: 200 }), 50);
+      });
+
       previousExpansionRef.current = new Set(currentExpanded);
-    } else if (!expansionChanged) {
-      // Just update nodes without animation (e.g., highlight changes)
-      setNodes(layoutedNodes);
+    } else {
+      // No expansion change - just update node data (e.g., highlights)
+      setNodes((current) => {
+        return rawNodes.map((rawNode) => {
+          const existingNode = current.find((n) => n.id === rawNode.id);
+          if (existingNode && !rawNode.id.startsWith("group-")) {
+            // Keep existing position, update data
+            return { ...rawNode, position: existingNode.position };
+          }
+          return rawNode;
+        });
+      });
     }
-  }, [layoutedNodes, expansionState?.expandedNodeIds, fitView]);
+  }, [buildNodes, expansionState?.expandedNodeIds, isInitialized, fitView]);
 
-  // Initial fit view
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      fitView({ padding: 0.2 });
-    }, 100);
-    return () => clearTimeout(timer);
-  }, [fitView]);
+  // Animation helper
+  const animateToPositions = (
+    fromNodes: Node[],
+    toNodes: Node[],
+    onComplete: () => void
+  ) => {
+    const duration = 250;
+    const startTime = performance.now();
+    const fromPositions = new Map(fromNodes.map((n) => [n.id, n.position]));
+
+    const animate = (currentTime: number) => {
+      const elapsed = currentTime - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      const eased = easeOutCubic(progress);
+
+      const interpolatedNodes = toNodes.map((toNode) => {
+        const fromPos = fromPositions.get(toNode.id);
+        if (!fromPos) return toNode;
+
+        return {
+          ...toNode,
+          position: {
+            x: fromPos.x + (toNode.position.x - fromPos.x) * eased,
+            y: fromPos.y + (toNode.position.y - fromPos.y) * eased,
+          },
+        };
+      });
+
+      setNodes(interpolatedNodes);
+
+      if (progress < 1) {
+        requestAnimationFrame(animate);
+      } else {
+        onComplete();
+      }
+    };
+
+    requestAnimationFrame(animate);
+  };
+
+  // Update group frame positions based on child positions
+  function updateGroupFrames(allNodes: Node[], expandedIds: Set<string>): Node[] {
+    return allNodes.map((node) => {
+      if (!node.id.startsWith("group-") || node.id.startsWith("group-header-")) {
+        return node;
+      }
+
+      const parentId = node.id.replace("group-", "");
+      if (!expandedIds.has(parentId)) return node;
+
+      const parentNode = allNodes.find((n) => n.id === parentId);
+      const childNodes = allNodes.filter((n) => {
+        const data = n.data as { parentGroupId?: string };
+        return data.parentGroupId === parentId;
+      });
+
+      if (parentNode && childNodes.length > 0) {
+        const frame = calculateGroupFrame(parentNode, childNodes);
+        return {
+          ...node,
+          position: frame.position,
+          style: { ...node.style, width: frame.width, height: frame.height },
+        };
+      }
+
+      return node;
+    }).map((node) => {
+      // Update header positions
+      if (!node.id.startsWith("group-header-")) return node;
+
+      const parentId = node.id.replace("group-header-", "");
+      const groupFrame = allNodes.find((n) => n.id === `group-${parentId}`);
+
+      if (groupFrame) {
+        return {
+          ...node,
+          position: { x: groupFrame.position.x, y: groupFrame.position.y - 28 },
+        };
+      }
+
+      return node;
+    });
+  }
 
   const persistPositions = useCallback(
     (nextNodes: Node[]) => {
@@ -293,9 +405,7 @@ function CanvasInner({
         ...architecture,
         nodes: architecture.nodes.map((node) => {
           const flowNode = nextNodes.find((item) => item.id === node.id);
-          if (!flowNode) {
-            return node;
-          }
+          if (!flowNode) return node;
           return {
             ...node,
             position_x: flowNode.position.x,
@@ -310,21 +420,36 @@ function CanvasInner({
 
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => {
-      // Don't process changes during animation
-      if (isAnimatingRef.current) return;
-
       setNodes((current) => {
         const next = applyNodeChanges(changes, current);
+
+        // Check if a drag finished
         const finishedDrag = changes.some(
           (change) => change.type === "position" && change.dragging === false,
         );
+
         if (finishedDrag) {
-          persistPositions(next);
+          // Update group frames to follow their children
+          const expandedIds = expansionState?.expandedNodeIds ?? new Set();
+          const withUpdatedFrames = updateGroupFrames(next, expandedIds);
+          persistPositions(withUpdatedFrames);
+          return withUpdatedFrames;
         }
+
+        // During drag, update group frames in real-time
+        const isDragging = changes.some(
+          (change) => change.type === "position" && change.dragging === true,
+        );
+
+        if (isDragging) {
+          const expandedIds = expansionState?.expandedNodeIds ?? new Set();
+          return updateGroupFrames(next, expandedIds);
+        }
+
         return next;
       });
     },
-    [persistPositions],
+    [persistPositions, expansionState?.expandedNodeIds],
   );
 
   const onNodeClick = useCallback(
@@ -343,7 +468,6 @@ function CanvasInner({
       if (flowNode.id.startsWith("group-")) return;
       const raw = (flowNode.data as { raw?: KeelNode }).raw;
       if (raw) {
-        // Double-click toggles expansion instead of full level switch
         if (canNodeExpand(raw)) {
           const isExpanded = expansionState?.expandedNodeIds.has(raw.id);
           if (isExpanded) {
@@ -359,7 +483,7 @@ function CanvasInner({
   );
 
   const onPaneClick = useCallback(() => {
-    onNodeSelect?.(null as unknown as KeelNode);
+    onNodeSelect?.(null);
   }, [onNodeSelect]);
 
   return (
@@ -381,8 +505,8 @@ function CanvasInner({
   );
 }
 
-function easeInOutCubic(t: number): number {
-  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+function easeOutCubic(t: number): number {
+  return 1 - Math.pow(1 - t, 3);
 }
 
 export function Canvas(props: CanvasProps) {

@@ -1,352 +1,302 @@
 /**
- * Auto-layout engine for the C4 canvas using dagre.
+ * Layout utilities for the C4 canvas.
  *
- * Automatically positions nodes when the graph structure changes (expand/collapse),
- * pushing sibling nodes to make room for expanded groups.
+ * Provides smart positioning that respects user-placed nodes while
+ * making room for expanded groups.
  */
-import dagre from "dagre";
-import type { Node, Edge } from "@xyflow/react";
+import type { Node } from "@xyflow/react";
 
 export interface LayoutOptions {
-  direction: "TB" | "LR" | "BT" | "RL";
   nodeWidth: number;
   nodeHeight: number;
-  nodeSeparation: number;
-  rankSeparation: number;
   groupPadding: number;
+  minSpacing: number;
 }
 
 const DEFAULT_OPTIONS: LayoutOptions = {
-  direction: "TB",
   nodeWidth: 180,
   nodeHeight: 80,
-  nodeSeparation: 50,
-  rankSeparation: 100,
   groupPadding: 40,
+  minSpacing: 30,
 };
 
+interface Rect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 /**
- * Apply dagre layout to a set of nodes and edges.
- * Returns new nodes with updated positions.
+ * Check if two rectangles overlap.
  */
-export function applyDagreLayout(
-  nodes: Node[],
-  edges: Edge[],
+function rectsOverlap(a: Rect, b: Rect, padding: number = 0): boolean {
+  return !(
+    a.x + a.width + padding < b.x ||
+    b.x + b.width + padding < a.x ||
+    a.y + a.height + padding < b.y ||
+    b.y + b.height + padding < a.y
+  );
+}
+
+/**
+ * Calculate the bounds of an expanded group including its children.
+ */
+export function calculateGroupBounds(
+  parentNode: Node,
+  childNodes: Node[],
   options: Partial<LayoutOptions> = {}
-): Node[] {
+): Rect {
   const opts = { ...DEFAULT_OPTIONS, ...options };
 
-  const dagreGraph = new dagre.graphlib.Graph();
-  dagreGraph.setDefaultEdgeLabel(() => ({}));
-  dagreGraph.setGraph({
-    rankdir: opts.direction,
-    nodesep: opts.nodeSeparation,
-    ranksep: opts.rankSeparation,
-    marginx: 20,
-    marginy: 20,
-  });
-
-  // Add nodes to dagre graph
-  for (const node of nodes) {
-    // Skip group frame nodes - they'll be positioned based on their children
-    if (node.id.startsWith("group-")) continue;
-
-    dagreGraph.setNode(node.id, {
+  if (childNodes.length === 0) {
+    return {
+      x: parentNode.position.x,
+      y: parentNode.position.y,
       width: opts.nodeWidth,
       height: opts.nodeHeight,
-    });
-  }
-
-  // Add edges to dagre graph
-  for (const edge of edges) {
-    // Only add edges between nodes that exist in the graph
-    if (dagreGraph.hasNode(edge.source) && dagreGraph.hasNode(edge.target)) {
-      dagreGraph.setEdge(edge.source, edge.target);
-    }
-  }
-
-  // Run the layout algorithm
-  dagre.layout(dagreGraph);
-
-  // Apply calculated positions to nodes
-  return nodes.map((node) => {
-    // Skip group nodes - handle them separately
-    if (node.id.startsWith("group-")) {
-      return node;
-    }
-
-    const dagreNode = dagreGraph.node(node.id);
-    if (!dagreNode) {
-      return node;
-    }
-
-    return {
-      ...node,
-      position: {
-        x: dagreNode.x - opts.nodeWidth / 2,
-        y: dagreNode.y - opts.nodeHeight / 2,
-      },
     };
-  });
-}
-
-/**
- * Layout nodes with hierarchical grouping support.
- *
- * This handles the case where expanded nodes have children that should be
- * grouped together, and sibling nodes should be pushed to make room.
- */
-export function applyHierarchicalLayout(
-  nodes: Node[],
-  edges: Edge[],
-  expandedNodeIds: Set<string>,
-  options: Partial<LayoutOptions> = {}
-): Node[] {
-  const opts = { ...DEFAULT_OPTIONS, ...options };
-
-  // Separate nodes by their parent group
-  const rootNodes = nodes.filter(
-    (n) => !n.id.startsWith("group-") && !n.parentId && !getParentGroupId(n)
-  );
-  const childNodesByParent = new Map<string, Node[]>();
-
-  for (const node of nodes) {
-    if (node.id.startsWith("group-")) continue;
-    const parentId = getParentGroupId(node);
-    if (parentId) {
-      if (!childNodesByParent.has(parentId)) {
-        childNodesByParent.set(parentId, []);
-      }
-      childNodesByParent.get(parentId)!.push(node);
-    }
   }
 
-  // Calculate the size each expanded group needs
-  const groupSizes = new Map<string, { width: number; height: number }>();
+  // Calculate grid layout for children
+  const childCount = childNodes.length;
+  const cols = Math.min(3, Math.ceil(Math.sqrt(childCount)));
+  const rows = Math.ceil(childCount / cols);
 
-  for (const [parentId, children] of childNodesByParent) {
-    if (children.length === 0) continue;
+  const groupWidth = cols * opts.nodeWidth + (cols - 1) * opts.minSpacing + opts.groupPadding * 2;
+  const groupHeight = rows * opts.nodeHeight + (rows - 1) * opts.minSpacing + opts.groupPadding * 2 + 30;
 
-    // Layout children internally
-    const childCount = children.length;
-    const cols = Math.ceil(Math.sqrt(childCount));
-    const rows = Math.ceil(childCount / cols);
+  // Group starts below the parent node
+  const groupX = parentNode.position.x - opts.groupPadding;
 
-    const width =
-      cols * opts.nodeWidth + (cols - 1) * opts.nodeSeparation + opts.groupPadding * 2;
-    const height =
-      rows * opts.nodeHeight + (rows - 1) * (opts.rankSeparation / 2) + opts.groupPadding * 2 + 30; // +30 for header
-
-    groupSizes.set(parentId, { width, height });
-  }
-
-  // Create a dagre graph for root-level layout
-  const dagreGraph = new dagre.graphlib.Graph();
-  dagreGraph.setDefaultEdgeLabel(() => ({}));
-  dagreGraph.setGraph({
-    rankdir: opts.direction,
-    nodesep: opts.nodeSeparation,
-    ranksep: opts.rankSeparation,
-    marginx: 40,
-    marginy: 40,
-  });
-
-  // Add root nodes with their sizes (expanded nodes are larger)
-  for (const node of rootNodes) {
-    const isExpanded = expandedNodeIds.has(node.id);
-    const groupSize = groupSizes.get(node.id);
-
-    let width = opts.nodeWidth;
-    let height = opts.nodeHeight;
-
-    if (isExpanded && groupSize) {
-      // The expanded node needs room for itself + its children group
-      width = Math.max(opts.nodeWidth, groupSize.width);
-      height = opts.nodeHeight + groupSize.height + 20; // gap between node and group
-    }
-
-    dagreGraph.setNode(node.id, { width, height });
-  }
-
-  // Add root-level edges
-  const rootNodeIds = new Set(rootNodes.map((n) => n.id));
-  for (const edge of edges) {
-    if (rootNodeIds.has(edge.source) && rootNodeIds.has(edge.target)) {
-      dagreGraph.setEdge(edge.source, edge.target);
-    }
-  }
-
-  // Run layout for root level
-  dagre.layout(dagreGraph);
-
-  // Build the final positioned nodes
-  const positionedNodes: Node[] = [];
-
-  for (const node of rootNodes) {
-    const dagreNode = dagreGraph.node(node.id);
-    if (!dagreNode) {
-      positionedNodes.push(node);
-      continue;
-    }
-
-    const isExpanded = expandedNodeIds.has(node.id);
-    const groupSize = groupSizes.get(node.id);
-
-    // Position the root node at the top of its allocated space
-    const nodeX = dagreNode.x - opts.nodeWidth / 2;
-    const nodeY = isExpanded && groupSize
-      ? dagreNode.y - dagreNode.height / 2
-      : dagreNode.y - opts.nodeHeight / 2;
-
-    positionedNodes.push({
-      ...node,
-      position: { x: nodeX, y: nodeY },
-    });
-
-    // Position children if expanded
-    if (isExpanded && groupSize) {
-      const children = childNodesByParent.get(node.id) ?? [];
-      const groupX = dagreNode.x - groupSize.width / 2;
-      const groupY = nodeY + opts.nodeHeight + 20;
-
-      // Add group frame node
-      const groupFrameNode = nodes.find((n) => n.id === `group-${node.id}`);
-      if (groupFrameNode) {
-        positionedNodes.push({
-          ...groupFrameNode,
-          position: { x: groupX, y: groupY },
-          style: {
-            ...groupFrameNode.style,
-            width: groupSize.width,
-            height: groupSize.height - 30,
-          },
-        });
-      }
-
-      // Add group header node
-      const groupHeaderNode = nodes.find((n) => n.id === `group-header-${node.id}`);
-      if (groupHeaderNode) {
-        positionedNodes.push({
-          ...groupHeaderNode,
-          position: { x: groupX, y: groupY - 28 },
-        });
-      }
-
-      // Layout children in a grid inside the group
-      const cols = Math.ceil(Math.sqrt(children.length));
-      children.forEach((child, index) => {
-        const col = index % cols;
-        const row = Math.floor(index / cols);
-
-        const childX = groupX + opts.groupPadding + col * (opts.nodeWidth + opts.nodeSeparation);
-        const childY = groupY + opts.groupPadding + row * (opts.nodeHeight + opts.rankSeparation / 2);
-
-        // Check if this child is also expanded (nested expansion)
-        const childIsExpanded = expandedNodeIds.has(child.id);
-        const childGroupSize = groupSizes.get(child.id);
-
-        positionedNodes.push({
-          ...child,
-          position: { x: childX, y: childY },
-        });
-
-        // Handle nested children (C3 inside C2)
-        if (childIsExpanded && childGroupSize) {
-          const nestedChildren = childNodesByParent.get(child.id) ?? [];
-          const nestedGroupX = childX;
-          const nestedGroupY = childY + opts.nodeHeight + 15;
-
-          // Add nested group frame
-          const nestedGroupFrame = nodes.find((n) => n.id === `group-${child.id}`);
-          if (nestedGroupFrame) {
-            positionedNodes.push({
-              ...nestedGroupFrame,
-              position: { x: nestedGroupX, y: nestedGroupY },
-              style: {
-                ...nestedGroupFrame.style,
-                width: childGroupSize.width,
-                height: childGroupSize.height - 30,
-              },
-            });
-          }
-
-          // Add nested group header
-          const nestedGroupHeader = nodes.find((n) => n.id === `group-header-${child.id}`);
-          if (nestedGroupHeader) {
-            positionedNodes.push({
-              ...nestedGroupHeader,
-              position: { x: nestedGroupX, y: nestedGroupY - 28 },
-            });
-          }
-
-          // Layout nested children
-          const nestedCols = Math.ceil(Math.sqrt(nestedChildren.length));
-          nestedChildren.forEach((nested, nestedIndex) => {
-            const nestedCol = nestedIndex % nestedCols;
-            const nestedRow = Math.floor(nestedIndex / nestedCols);
-
-            positionedNodes.push({
-              ...nested,
-              position: {
-                x: nestedGroupX + opts.groupPadding + nestedCol * (opts.nodeWidth + opts.nodeSeparation),
-                y: nestedGroupY + opts.groupPadding + nestedRow * (opts.nodeHeight + opts.rankSeparation / 2),
-              },
-            });
-          });
-        }
-      });
-    }
-  }
-
-  // Add any remaining group nodes that weren't processed
-  for (const node of nodes) {
-    if (node.id.startsWith("group-") && !positionedNodes.find((n) => n.id === node.id)) {
-      positionedNodes.push(node);
-    }
-  }
-
-  return positionedNodes;
-}
-
-/**
- * Extract parent group ID from node data.
- */
-function getParentGroupId(node: Node): string | null {
-  const data = node.data as { parentGroupId?: string | null };
-  return data?.parentGroupId ?? null;
-}
-
-/**
- * Animate transition between two sets of node positions.
- * Returns a function to update positions over time.
- */
-export function createLayoutTransition(
-  fromNodes: Node[],
-  toNodes: Node[],
-  _duration: number = 300
-): (progress: number) => Node[] {
-  const fromPositions = new Map(fromNodes.map((n) => [n.id, n.position]));
-
-  return (progress: number) => {
-    const eased = easeInOutCubic(progress);
-
-    return toNodes.map((toNode) => {
-      const fromPos = fromPositions.get(toNode.id);
-      if (!fromPos) {
-        return toNode;
-      }
-
-      return {
-        ...toNode,
-        position: {
-          x: fromPos.x + (toNode.position.x - fromPos.x) * eased,
-          y: fromPos.y + (toNode.position.y - fromPos.y) * eased,
-        },
-      };
-    });
+  // Total bounds includes parent + group
+  return {
+    x: Math.min(parentNode.position.x, groupX),
+    y: parentNode.position.y,
+    width: Math.max(opts.nodeWidth, groupWidth),
+    height: opts.nodeHeight + 20 + groupHeight,
   };
 }
 
-function easeInOutCubic(t: number): number {
-  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+/**
+ * Position children inside an expanded group in a grid layout.
+ * Returns new positions for children only.
+ */
+export function layoutChildrenInGroup(
+  parentNode: Node,
+  childNodes: Node[],
+  options: Partial<LayoutOptions> = {}
+): Map<string, { x: number; y: number }> {
+  const opts = { ...DEFAULT_OPTIONS, ...options };
+  const positions = new Map<string, { x: number; y: number }>();
+
+  if (childNodes.length === 0) {
+    return positions;
+  }
+
+  const cols = Math.min(3, Math.ceil(Math.sqrt(childNodes.length)));
+
+  // Group starts below the parent
+  const groupX = parentNode.position.x;
+  const groupStartY = parentNode.position.y + opts.nodeHeight + 50; // 50 = gap + header
+
+  childNodes.forEach((child, index) => {
+    const col = index % cols;
+    const row = Math.floor(index / cols);
+
+    // Check if child already has a valid position (user-placed)
+    const hasUserPosition = 
+      child.position.x !== 0 && 
+      child.position.y !== 0 &&
+      !isDefaultGridPosition(child.position, index);
+
+    if (hasUserPosition) {
+      // Keep user's position
+      positions.set(child.id, child.position);
+    } else {
+      // Apply grid layout
+      positions.set(child.id, {
+        x: groupX + col * (opts.nodeWidth + opts.minSpacing),
+        y: groupStartY + row * (opts.nodeHeight + opts.minSpacing),
+      });
+    }
+  });
+
+  return positions;
+}
+
+/**
+ * Check if a position looks like a default grid position (not user-placed).
+ */
+function isDefaultGridPosition(pos: { x: number; y: number }, index: number): boolean {
+  // Check against common default positioning patterns
+  const defaultX = 120 + (index % 5) * 220;
+  const defaultY = 100 + Math.floor(index / 5) * 140;
+  
+  return Math.abs(pos.x - defaultX) < 10 && Math.abs(pos.y - defaultY) < 10;
+}
+
+/**
+ * Push overlapping nodes away from an expanded group.
+ * Only moves nodes that actually overlap - preserves other positions.
+ */
+export function pushOverlappingNodes(
+  allNodes: Node[],
+  expandedNodeId: string,
+  groupBounds: Rect,
+  options: Partial<LayoutOptions> = {}
+): Map<string, { x: number; y: number }> {
+  const opts = { ...DEFAULT_OPTIONS, ...options };
+  const newPositions = new Map<string, { x: number; y: number }>();
+
+  // Find nodes that might need to move (root level, not part of the expanded group)
+  const nodesToCheck = allNodes.filter((n) => {
+    if (n.id === expandedNodeId) return false;
+    if (n.id.startsWith("group-")) return false;
+    const parentGroupId = (n.data as { parentGroupId?: string })?.parentGroupId;
+    if (parentGroupId === expandedNodeId) return false;
+    if (parentGroupId) return false; // Child of another group
+    return true;
+  });
+
+  for (const node of nodesToCheck) {
+    const nodeRect: Rect = {
+      x: node.position.x,
+      y: node.position.y,
+      width: opts.nodeWidth,
+      height: opts.nodeHeight,
+    };
+
+    if (rectsOverlap(nodeRect, groupBounds, opts.minSpacing)) {
+      // Calculate push direction - prefer horizontal push
+      const overlapLeft = groupBounds.x + groupBounds.width - node.position.x;
+      const overlapRight = node.position.x + opts.nodeWidth - groupBounds.x;
+      const overlapTop = groupBounds.y + groupBounds.height - node.position.y;
+      const overlapBottom = node.position.y + opts.nodeHeight - groupBounds.y;
+
+      // Find minimum push distance
+      const pushes = [
+        { dir: "right", dist: overlapLeft + opts.minSpacing },
+        { dir: "left", dist: overlapRight + opts.minSpacing },
+        { dir: "down", dist: overlapTop + opts.minSpacing },
+        { dir: "up", dist: overlapBottom + opts.minSpacing },
+      ].filter((p) => p.dist > 0);
+
+      if (pushes.length > 0) {
+        // Prefer horizontal push, then choose minimum distance
+        const horizontalPushes = pushes.filter((p) => p.dir === "left" || p.dir === "right");
+        const bestPush = horizontalPushes.length > 0
+          ? horizontalPushes.reduce((a, b) => (a.dist < b.dist ? a : b))
+          : pushes.reduce((a, b) => (a.dist < b.dist ? a : b));
+
+        let newX = node.position.x;
+        let newY = node.position.y;
+
+        switch (bestPush.dir) {
+          case "right":
+            newX = groupBounds.x + groupBounds.width + opts.minSpacing;
+            break;
+          case "left":
+            newX = groupBounds.x - opts.nodeWidth - opts.minSpacing;
+            break;
+          case "down":
+            newY = groupBounds.y + groupBounds.height + opts.minSpacing;
+            break;
+          case "up":
+            newY = groupBounds.y - opts.nodeHeight - opts.minSpacing;
+            break;
+        }
+
+        newPositions.set(node.id, { x: newX, y: newY });
+      }
+    }
+  }
+
+  return newPositions;
+}
+
+/**
+ * Apply initial layout to nodes that don't have positions yet.
+ * Preserves existing positions.
+ */
+export function applyInitialLayout(
+  nodes: Node[],
+  options: Partial<LayoutOptions> = {}
+): Node[] {
+  const opts = { ...DEFAULT_OPTIONS, ...options };
+
+  const result: Node[] = [];
+  let rootIndex = 0;
+
+  for (const node of nodes) {
+    if (node.id.startsWith("group-")) {
+      result.push(node);
+      continue;
+    }
+
+    const hasPosition = node.position.x !== 0 || node.position.y !== 0;
+
+    if (hasPosition) {
+      result.push(node);
+    } else {
+      // Apply default grid position for root nodes without positions
+      const parentGroupId = (node.data as { parentGroupId?: string })?.parentGroupId;
+      if (!parentGroupId) {
+        const col = rootIndex % 4;
+        const row = Math.floor(rootIndex / 4);
+        result.push({
+          ...node,
+          position: {
+            x: 100 + col * (opts.nodeWidth + 80),
+            y: 100 + row * (opts.nodeHeight + 100),
+          },
+        });
+        rootIndex++;
+      } else {
+        result.push(node);
+      }
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Calculate group frame position and size based on children.
+ */
+export function calculateGroupFrame(
+  parentNode: Node,
+  childNodes: Node[],
+  options: Partial<LayoutOptions> = {}
+): { position: { x: number; y: number }; width: number; height: number } {
+  const opts = { ...DEFAULT_OPTIONS, ...options };
+
+  if (childNodes.length === 0) {
+    return {
+      position: { x: parentNode.position.x, y: parentNode.position.y + opts.nodeHeight + 20 },
+      width: opts.nodeWidth + opts.groupPadding * 2,
+      height: 100,
+    };
+  }
+
+  // Find bounds of all children
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+
+  for (const child of childNodes) {
+    minX = Math.min(minX, child.position.x);
+    minY = Math.min(minY, child.position.y);
+    maxX = Math.max(maxX, child.position.x + opts.nodeWidth);
+    maxY = Math.max(maxY, child.position.y + opts.nodeHeight);
+  }
+
+  const padding = 20;
+
+  return {
+    position: {
+      x: minX - padding,
+      y: minY - padding - 28, // Account for header
+    },
+    width: maxX - minX + padding * 2,
+    height: maxY - minY + padding * 2,
+  };
 }

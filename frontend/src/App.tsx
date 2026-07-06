@@ -476,7 +476,7 @@ export default function App() {
             highlightedNodeIds={highlightedNodeIds}
             selectedNodeId={selectedNode?.id ?? null}
             onArchitectureChange={(next, level, containerId) => void persistArchitecture(next, level, containerId)}
-            onNodeSelect={setSelectedNode}
+            onNodeSelect={(node) => setSelectedNode(node)}
             onNodeExpand={(node) => void handleNodeExpand(node)}
             onNodeCollapse={handleNodeCollapse}
             onNodeDoubleClick={() => {}}
