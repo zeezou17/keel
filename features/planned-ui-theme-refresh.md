@@ -61,3 +61,8 @@ Deferred until Phase 0 design work completes.
 ## Notes
 
 This feature is intentionally backlog-only. Focus on FP-001 through FP-004 first. Revisit priority after selective drill-down and manual editing are shipped — those features will establish the component patterns that the theme refresh will style.
+
+**2026-07-06**: Confirmed as next priority after current phases complete. Plan includes:
+- Refresh the overall UI feel to be more modern and polished
+- Update the color palette for better visual hierarchy and aesthetics
+- Consider the following areas: toolbar, sidebar panels, canvas styling, node colors, sparring panel
