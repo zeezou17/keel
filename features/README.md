@@ -31,8 +31,15 @@ Living index of Keel capabilities — what is shipped, what was enhanced after t
 |----|---------|--------|--------|
 | FP-001 | [Resizable sidebars](planned-resizable-sidebars.md) | Planned | Drag-to-resize left docs panel and right sparring panel |
 | FP-002 | [Canvas manual editing](planned-canvas-manual-editing.md) | Planned | Edit/delete nodes and add edges manually on the diagram |
-| FP-003 | [Selective drill-down](planned-selective-drill-down.md) | Planned | Expand one branch in place; keep sibling nodes visible; multi-expand + collapse |
+| FP-003 | [Selective drill-down](planned-selective-drill-down.md) | In Progress | Expand one branch in place; keep sibling nodes visible; multi-expand + collapse |
 | FP-004 | [UML and multi-viewpoint diagrams](planned-uml-and-multi-viewpoint-diagrams.md) | Backlog | UML (class, sequence, …) and other notations beyond C4; research phase first |
+| FP-005 | [UI theme and color palette refresh](planned-ui-theme-refresh.md) | Backlog | Visual refresh of colors, typography, and component styling after core UX features ship |
+| FP-006 | [Fix add-node targeting and parent linking](planned-fix-add-node-targeting.md) | Backlog | Add node creates nodes at wrong level/parent; spurious links to containers |
+| FP-007 | [Fix “View all C2” escape hatch](planned-fix-view-all-c2.md) | Backlog | Overview mode feels like collapse; expansion state lost on exit |
+| FP-008 | [Delete node from the UI](planned-fix-delete-node.md) | Backlog | No way to remove a node after creation; API exists, UI does not |
+| FP-009 | [Fix drag-and-drop position persistence](planned-fix-position-persistence.md) | Backlog | Dragged node positions reset on reload, re-expand, or overview mode |
+| FP-010 | [Docker image and GitHub Actions CI](planned-docker-and-ci.md) | Backlog | No Dockerfile or project CI; pytest/vitest not run on PRs |
+| FP-011 | [Cross-platform support (beyond Ubuntu)](planned-cross-platform-support.md) | Backlog | macOS/Windows untested; bash-only build scripts; path/git edge cases |
 
 ## How to use this folder
 
