@@ -3,6 +3,7 @@
  *
  * Uses React Flow to render nodes/edges with selective drill-down (FP-003).
  * Supports expand-in-place via chevron controls on system/container nodes.
+ * Auto-layouts nodes using dagre when expansion state changes.
  */
 import {
   Background,
@@ -13,34 +14,22 @@ import {
   type NodeChange,
   type Edge,
   applyNodeChanges,
+  useReactFlow,
+  ReactFlowProvider,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { ArchitectureFile, KeelNode } from "../api/client";
 import type { ComposedNode, ExpansionState } from "../canvas/expansion";
 import { canNodeExpand } from "../canvas/expansion";
+import { applyHierarchicalLayout } from "../canvas/layout";
 import { ExpandableNode, type ExpandableNodeData } from "./ExpandableNode";
 
 const GROUP_COLORS: Record<number, { border: string; background: string }> = {
   1: { border: "#2a9d8f", background: "rgba(42, 157, 143, 0.08)" },
   2: { border: "#457b9d", background: "rgba(69, 123, 157, 0.08)" },
 };
-
-function defaultPosition(index: number): { x: number; y: number } {
-  const column = index % 5;
-  const row = Math.floor(index / 5);
-  return { x: 120 + column * 220, y: 100 + row * 140 };
-}
-
-function childPosition(index: number, parentX: number, parentY: number): { x: number; y: number } {
-  const column = index % 3;
-  const row = Math.floor(index / 3);
-  return {
-    x: parentX + 30 + column * 200,
-    y: parentY + 80 + row * 120,
-  };
-}
 
 const nodeTypes = {
   expandable: ExpandableNode,
@@ -59,7 +48,7 @@ interface CanvasProps {
   onNodeDoubleClick?: (node: KeelNode) => void;
 }
 
-export function Canvas({
+function CanvasInner({
   architecture,
   composedNodes,
   expansionState,
@@ -71,7 +60,10 @@ export function Canvas({
   onNodeCollapse,
   onNodeDoubleClick,
 }: CanvasProps) {
+  const { fitView } = useReactFlow();
   const highlightSet = useMemo(() => new Set(highlightedNodeIds), [highlightedNodeIds]);
+  const previousExpansionRef = useRef<Set<string>>(new Set());
+  const isAnimatingRef = useRef(false);
 
   const isEmphasized = useCallback(
     (nodeId: string) => highlightSet.has(nodeId) || nodeId === selectedNodeId,
@@ -87,11 +79,7 @@ export function Canvas({
   }, [composedNodes, expansionState, architecture.nodes, isEmphasized]);
 
   function buildSimpleNodes(nodes: KeelNode[], checkEmphasized: (id: string) => boolean): Node[] {
-    return nodes.map((node, index) => {
-      const position =
-        node.position_x != null && node.position_y != null
-          ? { x: node.position_x, y: node.position_y }
-          : defaultPosition(index);
+    return nodes.map((node) => {
       const hasChildren = canNodeExpand(node);
       const isExpanded = expansionState?.expandedNodeIds.has(node.id) ?? false;
       const emphasized = checkEmphasized(node.id);
@@ -99,7 +87,7 @@ export function Canvas({
       return {
         id: node.id,
         type: "expandable",
-        position,
+        position: { x: 0, y: 0 }, // Will be set by layout
         data: {
           label: node.name,
           nodeType: node.type,
@@ -109,10 +97,11 @@ export function Canvas({
           hasChildren,
           isHighlighted: emphasized,
           isSelected: node.id === selectedNodeId,
+          parentGroupId: null,
           raw: node,
           onExpand: hasChildren ? () => onNodeExpand?.(node) : undefined,
           onCollapse: isExpanded ? () => onNodeCollapse?.(node) : undefined,
-        } satisfies ExpandableNodeData & { raw: KeelNode },
+        } satisfies ExpandableNodeData & { raw: KeelNode; parentGroupId: string | null },
         style: {
           zIndex: 10,
         },
@@ -126,126 +115,68 @@ export function Canvas({
     checkEmphasized: (id: string) => boolean
   ): Node[] {
     const result: Node[] = [];
-    const groupFrames: Map<string, { x: number; y: number; width: number; height: number }> = new Map();
 
-    // First pass: calculate positions for all nodes
-    const nodePositions: Map<string, { x: number; y: number }> = new Map();
-    let childIndexByParent: Map<string, number> = new Map();
-
-    for (const node of composed) {
-      let position: { x: number; y: number };
-
-      if (node.parentGroupId) {
-        // Child node - position relative to parent
-        const parentNode = composed.find((n) => n.id === node.parentGroupId);
-        const parentPos = parentNode
-          ? nodePositions.get(parentNode.id) ?? { x: 200, y: 100 }
-          : { x: 200, y: 100 };
-
-        const childIndex = childIndexByParent.get(node.parentGroupId) ?? 0;
-        childIndexByParent.set(node.parentGroupId, childIndex + 1);
-
-        position =
-          node.position_x != null && node.position_y != null
-            ? { x: node.position_x, y: node.position_y }
-            : childPosition(childIndex, parentPos.x, parentPos.y);
-      } else {
-        // Root node
-        const index = composed.filter((n) => !n.parentGroupId).indexOf(node);
-        position =
-          node.position_x != null && node.position_y != null
-            ? { x: node.position_x, y: node.position_y }
-            : defaultPosition(index);
-      }
-
-      nodePositions.set(node.id, position);
-    }
-
-    // Second pass: calculate group frame bounds
+    // First, create group frames for expanded nodes
     for (const node of composed) {
       if (node.isExpanded && node.hasChildren) {
         const children = composed.filter((n) => n.parentGroupId === node.id);
         if (children.length > 0) {
-          let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+          const colors = GROUP_COLORS[node.depth] ?? GROUP_COLORS[1];
 
-          for (const child of children) {
-            const pos = nodePositions.get(child.id)!;
-            minX = Math.min(minX, pos.x);
-            minY = Math.min(minY, pos.y);
-            maxX = Math.max(maxX, pos.x + 180);
-            maxY = Math.max(maxY, pos.y + 80);
-          }
+          // Group frame (will be positioned by layout)
+          result.push({
+            id: `group-${node.id}`,
+            type: "default",
+            position: { x: 0, y: 0 },
+            data: { label: "", parentGroupId: null },
+            style: {
+              width: 300,
+              height: 200,
+              border: `2px dashed ${colors.border}`,
+              borderRadius: 12,
+              background: colors.background,
+              zIndex: 0,
+              pointerEvents: "none" as const,
+            },
+            selectable: false,
+            draggable: false,
+          });
 
-          const parentPos = nodePositions.get(node.id)!;
-          groupFrames.set(node.id, {
-            x: Math.min(parentPos.x - 20, minX - 20),
-            y: parentPos.y + 60,
-            width: Math.max(220, maxX - minX + 60),
-            height: Math.max(150, maxY - minY + 80),
+          // Group header
+          result.push({
+            id: `group-header-${node.id}`,
+            type: "default",
+            position: { x: 0, y: 0 },
+            data: {
+              label: `${node.name} · C${node.depth + 1} · ${children.length} children`,
+              parentGroupId: null,
+            },
+            style: {
+              background: colors.border,
+              color: "#ffffff",
+              padding: "4px 10px",
+              borderRadius: "8px 8px 0 0",
+              fontSize: "0.8rem",
+              fontWeight: 600,
+              border: "none",
+              zIndex: 1,
+              pointerEvents: "none" as const,
+            },
+            selectable: false,
+            draggable: false,
           });
         }
       }
     }
 
-    // Third pass: create group frame nodes
-    for (const [nodeId, frame] of groupFrames) {
-      const parentNode = composed.find((n) => n.id === nodeId);
-      if (parentNode) {
-        const childCount = composed.filter((n) => n.parentGroupId === nodeId).length;
-        const colors = GROUP_COLORS[parentNode.depth] ?? GROUP_COLORS[1];
-
-        result.push({
-          id: `group-${nodeId}`,
-          type: "default",
-          position: { x: frame.x, y: frame.y },
-          data: { label: "" },
-          style: {
-            width: frame.width,
-            height: frame.height,
-            border: `2px dashed ${colors.border}`,
-            borderRadius: 12,
-            background: colors.background,
-            zIndex: 0,
-            pointerEvents: "none" as const,
-          },
-          selectable: false,
-          draggable: false,
-        });
-
-        // Group header
-        result.push({
-          id: `group-header-${nodeId}`,
-          type: "default",
-          position: { x: frame.x, y: frame.y - 28 },
-          data: {
-            label: `${parentNode.name} · C${parentNode.depth + 1} · ${childCount} children`,
-          },
-          style: {
-            background: colors.border,
-            color: "#ffffff",
-            padding: "4px 10px",
-            borderRadius: "8px 8px 0 0",
-            fontSize: "0.8rem",
-            fontWeight: 600,
-            border: "none",
-            zIndex: 1,
-            pointerEvents: "none" as const,
-          },
-          selectable: false,
-          draggable: false,
-        });
-      }
-    }
-
-    // Fourth pass: create actual nodes
+    // Then create actual nodes
     for (const node of composed) {
-      const position = nodePositions.get(node.id)!;
       const emphasized = checkEmphasized(node.id);
 
       result.push({
         id: node.id,
         type: "expandable",
-        position,
+        position: { x: 0, y: 0 }, // Will be set by layout
         data: {
           label: node.name,
           nodeType: node.type,
@@ -255,10 +186,11 @@ export function Canvas({
           hasChildren: node.hasChildren,
           isHighlighted: emphasized,
           isSelected: node.id === selectedNodeId,
+          parentGroupId: node.parentGroupId,
           raw: node,
           onExpand: node.hasChildren && !node.isExpanded ? () => onNodeExpand?.(node) : undefined,
           onCollapse: node.isExpanded ? () => onNodeCollapse?.(node) : undefined,
-        } satisfies ExpandableNodeData & { raw: KeelNode },
+        } satisfies ExpandableNodeData & { raw: KeelNode; parentGroupId: string | null | undefined },
         style: {
           zIndex: 10 + node.depth,
         },
@@ -278,42 +210,85 @@ export function Canvas({
     }));
   }, [architecture.edges]);
 
-  const initialNodes = useMemo(() => buildNodes(), [buildNodes]);
-  const [nodes, setNodes] = useState<Node[]>(initialNodes);
+  // Build and layout nodes
+  const rawNodes = useMemo(() => buildNodes(), [buildNodes]);
   const edges = useMemo(() => buildEdges(), [buildEdges]);
 
+  // Apply layout
+  const layoutedNodes = useMemo(() => {
+    const expandedIds = expansionState?.expandedNodeIds ?? new Set();
+    return applyHierarchicalLayout(rawNodes, edges, expandedIds);
+  }, [rawNodes, edges, expansionState?.expandedNodeIds]);
+
+  const [nodes, setNodes] = useState<Node[]>(layoutedNodes);
+
+  // Animate layout changes when expansion state changes
   useEffect(() => {
-    setNodes(buildNodes());
-  }, [buildNodes]);
+    const currentExpanded = expansionState?.expandedNodeIds ?? new Set();
+    const previousExpanded = previousExpansionRef.current;
+
+    // Check if expansion state actually changed
+    const expansionChanged =
+      currentExpanded.size !== previousExpanded.size ||
+      [...currentExpanded].some((id) => !previousExpanded.has(id)) ||
+      [...previousExpanded].some((id) => !currentExpanded.has(id));
+
+    if (expansionChanged && !isAnimatingRef.current) {
+      isAnimatingRef.current = true;
+      const startNodes = nodes;
+      const endNodes = layoutedNodes;
+      const duration = 300;
+      const startTime = performance.now();
+
+      const animate = (currentTime: number) => {
+        const elapsed = currentTime - startTime;
+        const progress = Math.min(elapsed / duration, 1);
+        const eased = easeInOutCubic(progress);
+
+        const interpolatedNodes = endNodes.map((endNode) => {
+          const startNode = startNodes.find((n) => n.id === endNode.id);
+          if (!startNode) {
+            return endNode;
+          }
+
+          return {
+            ...endNode,
+            position: {
+              x: startNode.position.x + (endNode.position.x - startNode.position.x) * eased,
+              y: startNode.position.y + (endNode.position.y - startNode.position.y) * eased,
+            },
+          };
+        });
+
+        setNodes(interpolatedNodes);
+
+        if (progress < 1) {
+          requestAnimationFrame(animate);
+        } else {
+          isAnimatingRef.current = false;
+          // Fit view after animation completes
+          setTimeout(() => fitView({ padding: 0.2, duration: 200 }), 50);
+        }
+      };
+
+      requestAnimationFrame(animate);
+      previousExpansionRef.current = new Set(currentExpanded);
+    } else if (!expansionChanged) {
+      // Just update nodes without animation (e.g., highlight changes)
+      setNodes(layoutedNodes);
+    }
+  }, [layoutedNodes, expansionState?.expandedNodeIds, fitView]);
+
+  // Initial fit view
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      fitView({ padding: 0.2 });
+    }, 100);
+    return () => clearTimeout(timer);
+  }, [fitView]);
 
   const persistPositions = useCallback(
     (nextNodes: Node[]) => {
-      // Only persist position changes for actual architecture nodes (not groups)
-      const architectureNodeIds = new Set(architecture.nodes.map((n) => n.id));
-      const composedNodeIds = composedNodes ? new Set(composedNodes.map((n) => n.id)) : architectureNodeIds;
-
-      const updatedNodes = nextNodes.filter(
-        (n) => !n.id.startsWith("group-") && composedNodeIds.has(n.id)
-      );
-
-      // Group nodes by their level for proper persistence
-      const nodesByLevel: Map<number, { node: KeelNode; position: { x: number; y: number } }[]> = new Map();
-
-      for (const flowNode of updatedNodes) {
-        const rawNode = (flowNode.data as { raw?: KeelNode }).raw;
-        if (rawNode) {
-          const level = rawNode.level;
-          if (!nodesByLevel.has(level)) {
-            nodesByLevel.set(level, []);
-          }
-          nodesByLevel.get(level)!.push({
-            node: rawNode,
-            position: flowNode.position,
-          });
-        }
-      }
-
-      // For the root architecture, update positions
       const updated: ArchitectureFile = {
         ...architecture,
         nodes: architecture.nodes.map((node) => {
@@ -330,11 +305,14 @@ export function Canvas({
       };
       onArchitectureChange(updated, architecture.level, architecture.container_id);
     },
-    [architecture, composedNodes, onArchitectureChange],
+    [architecture, onArchitectureChange],
   );
 
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => {
+      // Don't process changes during animation
+      if (isAnimatingRef.current) return;
+
       setNodes((current) => {
         const next = applyNodeChanges(changes, current);
         const finishedDrag = changes.some(
@@ -385,22 +363,34 @@ export function Canvas({
   }, [onNodeSelect]);
 
   return (
+    <ReactFlow
+      nodes={nodes}
+      edges={edges}
+      nodeTypes={nodeTypes}
+      onNodesChange={onNodesChange}
+      onNodeClick={onNodeClick}
+      onNodeDoubleClick={handleNodeDoubleClick}
+      onPaneClick={onPaneClick}
+      fitView
+      fitViewOptions={{ padding: 0.2 }}
+    >
+      <Background />
+      <MiniMap />
+      <Controls />
+    </ReactFlow>
+  );
+}
+
+function easeInOutCubic(t: number): number {
+  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+}
+
+export function Canvas(props: CanvasProps) {
+  return (
     <div style={{ width: "100%", height: "100%" }}>
-      <ReactFlow
-        nodes={nodes}
-        edges={edges}
-        nodeTypes={nodeTypes}
-        onNodesChange={onNodesChange}
-        onNodeClick={onNodeClick}
-        onNodeDoubleClick={handleNodeDoubleClick}
-        onPaneClick={onPaneClick}
-        fitView
-        fitViewOptions={{ padding: 0.2 }}
-      >
-        <Background />
-        <MiniMap />
-        <Controls />
-      </ReactFlow>
+      <ReactFlowProvider>
+        <CanvasInner {...props} />
+      </ReactFlowProvider>
     </div>
   );
 }

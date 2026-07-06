@@ -114,7 +114,7 @@ export default function App() {
         action: () => {
           setFullLevelView(null);
           setFullLevelArchitecture(null);
-          setExpansionState(collapseAll(expansionState));
+          setExpansionState((prev) => collapseAll(prev));
         },
       },
     ];
