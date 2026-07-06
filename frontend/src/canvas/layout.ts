@@ -106,23 +106,12 @@ export function layoutChildrenInGroup(
     const col = index % cols;
     const row = Math.floor(index / cols);
 
-    // Check if child already has a valid position that's near the parent
-    // (not at 0,0 and not a default grid position from before)
-    const hasPosition = child.position.x !== 0 || child.position.y !== 0;
-    const isNearParent = hasPosition && 
-      Math.abs(child.position.x - parentNode.position.x) < 800 &&
-      child.position.y > parentNode.position.y;
-
-    if (isNearParent) {
-      // Keep the existing position - it's a reasonable user placement
-      positions.set(child.id, child.position);
-    } else {
-      // Apply grid layout relative to parent
-      positions.set(child.id, {
-        x: groupX + col * (opts.nodeWidth + opts.minSpacing),
-        y: groupStartY + row * (opts.nodeHeight + opts.minSpacing),
-      });
-    }
+    // Always lay out under the parent on expand. Saved C2 positions are for the
+    // full-level view and cause children to appear scattered or stranded.
+    positions.set(child.id, {
+      x: groupX + col * (opts.nodeWidth + opts.minSpacing),
+      y: groupStartY + row * (opts.nodeHeight + opts.minSpacing),
+    });
   });
 
   return positions;
@@ -231,32 +220,26 @@ export function applyInitialLayout(
   let rootIndex = 0;
 
   for (const node of nodes) {
-    if (node.id.startsWith("group-")) {
-      result.push(node);
-      continue;
-    }
+    const parentGroupId = (node.data as { parentGroupId?: string })?.parentGroupId;
 
     const hasPosition = node.position.x !== 0 || node.position.y !== 0;
 
     if (hasPosition) {
       result.push(node);
+    } else if (!parentGroupId) {
+      const col = rootIndex % 4;
+      const row = Math.floor(rootIndex / 4);
+      result.push({
+        ...node,
+        position: {
+          x: 100 + col * (opts.nodeWidth + 80),
+          y: 100 + row * (opts.nodeHeight + 100),
+        },
+      });
+      rootIndex++;
     } else {
-      // Apply default grid position for root nodes without positions
-      const parentGroupId = (node.data as { parentGroupId?: string })?.parentGroupId;
-      if (!parentGroupId) {
-        const col = rootIndex % 4;
-        const row = Math.floor(rootIndex / 4);
-        result.push({
-          ...node,
-          position: {
-            x: 100 + col * (opts.nodeWidth + 80),
-            y: 100 + row * (opts.nodeHeight + 100),
-          },
-        });
-        rootIndex++;
-      } else {
-        result.push(node);
-      }
+      // Child without a position — leave at origin; expand layout will place it
+      result.push(node);
     }
   }
 

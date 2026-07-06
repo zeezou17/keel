@@ -75,15 +75,15 @@ body {
 
 .node-detail-panel {
   position: absolute;
-  left: 1rem;
   right: 1rem;
   bottom: 1rem;
+  z-index: 30;
   background: rgba(255, 255, 255, 0.96);
   border: 1px solid #d9e2ec;
   border-radius: 10px;
   padding: 0.85rem 1rem;
   box-shadow: 0 8px 24px rgba(16, 42, 67, 0.12);
-  max-width: 640px;
+  width: min(420px, calc(100% - 2rem));
 }
 
 .node-detail-header {

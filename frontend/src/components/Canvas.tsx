@@ -31,16 +31,11 @@ import { canNodeExpand } from "../canvas/expansion";
 import {
   applyInitialLayout,
   layoutChildrenInGroup,
-  calculateGroupFrame,
   calculateGroupBounds,
   pushOverlappingNodes,
 } from "../canvas/layout";
+import { mergeWithLivePositions, rebuildGroupFrames } from "../canvas/groupFrames";
 import { ExpandableNode, type ExpandableNodeData } from "./ExpandableNode";
-
-const GROUP_COLORS: Record<number, { border: string; background: string }> = {
-  1: { border: "#2a9d8f", background: "rgba(42, 157, 143, 0.08)" },
-  2: { border: "#457b9d", background: "rgba(69, 123, 157, 0.08)" },
-};
 
 const nodeTypes = {
   expandable: ExpandableNode,
@@ -74,6 +69,7 @@ function CanvasInner({
   const { fitView } = useReactFlow();
   const highlightSet = useMemo(() => new Set(highlightedNodeIds), [highlightedNodeIds]);
   const previousExpansionRef = useRef<Set<string>>(new Set());
+  const nodesRef = useRef<Node[]>([]);
   const [nodes, setNodes] = useState<Node[]>([]);
   const [isInitialized, setIsInitialized] = useState(false);
 
@@ -81,6 +77,12 @@ function CanvasInner({
     (nodeId: string) => highlightSet.has(nodeId) || nodeId === selectedNodeId,
     [highlightSet, selectedNodeId],
   );
+
+  nodesRef.current = nodes;
+
+  function mergeFromCanvas(rawNodes: Node[]): Node[] {
+    return mergeWithLivePositions(rawNodes, nodesRef.current);
+  }
 
   // Build React Flow nodes from architecture data
   const buildNodes = useCallback((): Node[] => {
@@ -181,67 +183,8 @@ function CanvasInner({
       });
     }
 
-    // Add group frames for expanded nodes that have visible children
-    for (const node of composed) {
-      // Only add group if this node is actually expanded AND in the expanded set
-      if (!node.isExpanded || !expandedIds.has(node.id)) {
-        continue;
-      }
-
-      const children = result.filter((n) => {
-        const data = n.data as { parentGroupId?: string };
-        return data.parentGroupId === node.id;
-      });
-
-      // Only add group frame if there are visible children
-      if (children.length > 0) {
-        const parentNode = result.find((n) => n.id === node.id);
-        if (parentNode) {
-          const colors = GROUP_COLORS[node.depth] ?? GROUP_COLORS[1];
-          const frame = calculateGroupFrame(parentNode, children);
-
-          result.push({
-            id: `group-${node.id}`,
-            type: "default",
-            position: frame.position,
-            data: { label: "" },
-            style: {
-              width: frame.width,
-              height: frame.height,
-              border: `2px dashed ${colors.border}`,
-              borderRadius: 12,
-              background: colors.background,
-              zIndex: 0,
-              pointerEvents: "none" as const,
-            },
-            selectable: false,
-            draggable: false,
-          });
-
-          result.push({
-            id: `group-header-${node.id}`,
-            type: "default",
-            position: { x: frame.position.x, y: frame.position.y - 28 },
-            data: {
-              label: `${node.name} · C${node.depth + 1} · ${children.length} children`,
-            },
-            style: {
-              background: colors.border,
-              color: "#ffffff",
-              padding: "4px 10px",
-              borderRadius: "8px 8px 0 0",
-              fontSize: "0.8rem",
-              fontWeight: 600,
-              border: "none",
-              zIndex: 1,
-              pointerEvents: "none" as const,
-            },
-            selectable: false,
-            draggable: false,
-          });
-        }
-      }
-    }
+    // Group frames are added by rebuildGroupFrames() from live positions,
+    // not here — arch-file positions cause stray headers at the origin.
 
     return result;
   }
@@ -270,8 +213,10 @@ function CanvasInner({
     const expansionChanged = newlyExpanded.length > 0 || newlyCollapsed.length > 0;
 
     if (!isInitialized) {
-      // First render - apply initial layout to nodes without positions
-      const layoutedNodes = applyInitialLayout(rawNodes);
+      const layoutedNodes = rebuildGroupFrames(
+        applyInitialLayout(rawNodes),
+        currentExpanded,
+      );
       setNodes(layoutedNodes);
       setIsInitialized(true);
       previousExpansionRef.current = new Set(currentExpanded);
@@ -282,10 +227,8 @@ function CanvasInner({
     }
 
     if (expansionChanged) {
-      // Handle expansion change
-      let updatedNodes = [...rawNodes];
+      let updatedNodes = mergeFromCanvas(rawNodes);
 
-      // For newly expanded nodes, layout children and push overlapping siblings
       for (const expandedId of newlyExpanded) {
         const parentNode = updatedNodes.find((n) => n.id === expandedId);
         if (!parentNode) continue;
@@ -304,8 +247,12 @@ function CanvasInner({
             return newPos ? { ...n, position: newPos } : n;
           });
 
-          // Calculate group bounds and push overlapping nodes
-          const groupBounds = calculateGroupBounds(parentNode, childNodes);
+          const laidOutChildren = updatedNodes.filter((n) => {
+            const data = n.data as { parentGroupId?: string };
+            return data.parentGroupId === expandedId;
+          });
+
+          const groupBounds = calculateGroupBounds(parentNode, laidOutChildren);
           const pushPositions = pushOverlappingNodes(updatedNodes, expandedId, groupBounds);
           updatedNodes = updatedNodes.map((n) => {
             const newPos = pushPositions.get(n.id);
@@ -314,10 +261,16 @@ function CanvasInner({
         }
       }
 
-      // Update group frames based on new positions
-      updatedNodes = updateGroupFrames(updatedNodes, currentExpanded);
+      updatedNodes = rebuildGroupFrames(updatedNodes, currentExpanded);
 
-      // Animate to new positions
+      // Collapse removes nodes immediately — animation would leave stale frames visible.
+      if (newlyCollapsed.length > 0 && newlyExpanded.length === 0) {
+        nodesRef.current = updatedNodes;
+        setNodes(updatedNodes);
+        previousExpansionRef.current = new Set(currentExpanded);
+        return;
+      }
+
       animateToPositions(nodes, updatedNodes, () => {
         setNodes(updatedNodes);
         setTimeout(() => fitView({ padding: 0.2, duration: 200 }), 50);
@@ -325,16 +278,12 @@ function CanvasInner({
 
       previousExpansionRef.current = new Set(currentExpanded);
     } else {
-      // No expansion change - just update node data (e.g., highlights)
+      // No expansion change - update node data but keep live positions,
+      // then rebuild group frames from those positions (not arch-file coords).
       setNodes((current) => {
-        return rawNodes.map((rawNode) => {
-          const existingNode = current.find((n) => n.id === rawNode.id);
-          if (existingNode && !rawNode.id.startsWith("group-")) {
-            // Keep existing position, update data
-            return { ...rawNode, position: existingNode.position };
-          }
-          return rawNode;
-        });
+        nodesRef.current = current;
+        const merged = mergeWithLivePositions(rawNodes, current);
+        return rebuildGroupFrames(merged, currentExpanded);
       });
     }
   }, [buildNodes, expansionState?.expandedNodeIds, isInitialized, fitView]);
@@ -379,50 +328,6 @@ function CanvasInner({
     requestAnimationFrame(animate);
   };
 
-  // Update group frame positions based on child positions
-  function updateGroupFrames(allNodes: Node[], expandedIds: Set<string>): Node[] {
-    return allNodes.map((node) => {
-      if (!node.id.startsWith("group-") || node.id.startsWith("group-header-")) {
-        return node;
-      }
-
-      const parentId = node.id.replace("group-", "");
-      if (!expandedIds.has(parentId)) return node;
-
-      const parentNode = allNodes.find((n) => n.id === parentId);
-      const childNodes = allNodes.filter((n) => {
-        const data = n.data as { parentGroupId?: string };
-        return data.parentGroupId === parentId;
-      });
-
-      if (parentNode && childNodes.length > 0) {
-        const frame = calculateGroupFrame(parentNode, childNodes);
-        return {
-          ...node,
-          position: frame.position,
-          style: { ...node.style, width: frame.width, height: frame.height },
-        };
-      }
-
-      return node;
-    }).map((node) => {
-      // Update header positions
-      if (!node.id.startsWith("group-header-")) return node;
-
-      const parentId = node.id.replace("group-header-", "");
-      const groupFrame = allNodes.find((n) => n.id === `group-${parentId}`);
-
-      if (groupFrame) {
-        return {
-          ...node,
-          position: { x: groupFrame.position.x, y: groupFrame.position.y - 28 },
-        };
-      }
-
-      return node;
-    });
-  }
-
   const persistPositions = useCallback(
     (nextNodes: Node[]) => {
       const updated: ArchitectureFile = {
@@ -453,9 +358,8 @@ function CanvasInner({
         );
 
         if (finishedDrag) {
-          // Update group frames to follow their children
           const expandedIds = expansionState?.expandedNodeIds ?? new Set();
-          const withUpdatedFrames = updateGroupFrames(next, expandedIds);
+          const withUpdatedFrames = rebuildGroupFrames(next, expandedIds);
           persistPositions(withUpdatedFrames);
           return withUpdatedFrames;
         }
@@ -467,7 +371,7 @@ function CanvasInner({
 
         if (isDragging) {
           const expandedIds = expansionState?.expandedNodeIds ?? new Set();
-          return updateGroupFrames(next, expandedIds);
+          return rebuildGroupFrames(next, expandedIds);
         }
 
         return next;
@@ -492,7 +396,8 @@ function CanvasInner({
       if (flowNode.id.startsWith("group-")) return;
       const raw = (flowNode.data as { raw?: KeelNode }).raw;
       if (raw) {
-        if (canNodeExpand(raw)) {
+        const hasChildren = (flowNode.data as { hasChildren?: boolean }).hasChildren;
+        if (hasChildren) {
           const isExpanded = expansionState?.expandedNodeIds.has(raw.id);
           if (isExpanded) {
             onNodeCollapse?.(raw);

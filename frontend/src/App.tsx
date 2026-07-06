@@ -25,6 +25,7 @@ import {
   saveExpansionState,
   toggleExpansion,
   collapseAll,
+  collapseSubtree,
   expandMultiple,
   cacheChildArchitecture,
   getCachedArchitecture,
@@ -34,6 +35,8 @@ import {
   canNodeExpand,
   getChildLevel,
   findAncestorsToExpand,
+  nodeHasExpandableChildren,
+  getSystemContainers,
 } from "./canvas/expansion";
 import { Canvas } from "./components/Canvas";
 import { NodeDetailPanel } from "./components/NodeDetailPanel";
@@ -220,34 +223,58 @@ export default function App() {
       const childLevel = getChildLevel(node);
       if (!childLevel) return;
 
-      // Load child architecture if not cached
       if (childLevel === 2) {
-        // C2 is already loaded globally
+        if (!nodeHasExpandableChildren(node, expansionState, c2Architecture)) {
+          setError("This system has no containers to expand.");
+          return;
+        }
         setExpansionState((prev) => toggleExpansion(prev, node.id));
-      } else if (childLevel === 3) {
-        // Load C3 for this container
-        const cached = getCachedArchitecture(expansionState, node.id);
-        if (!cached) {
-          try {
-            const c3Data = await fetchArchitecture(3, node.id);
-            setExpansionState((prev) => {
-              const withCache = cacheChildArchitecture(prev, node.id, c3Data);
-              return toggleExpansion(withCache, node.id);
+
+        // Prefetch C3 files so containers with components get chevrons
+        const containers = getSystemContainers(node.id, c2Architecture);
+        for (const container of containers) {
+          if (getCachedArchitecture(expansionState, container.id)) continue;
+          void fetchArchitecture(3, container.id)
+            .then((c3Data) => {
+              setExpansionState((prev) => cacheChildArchitecture(prev, container.id, c3Data));
+            })
+            .catch(() => {
+              // No C3 file for this container — expected for most containers
             });
-          } catch (err) {
-            setError(err instanceof Error ? err.message : "Failed to load components");
+        }
+      } else if (childLevel === 3) {
+        const cached = getCachedArchitecture(expansionState, node.id);
+        if (cached) {
+          if (cached.nodes.length === 0) {
+            setError("This container has no components to expand.");
+            return;
           }
-        } else {
           setExpansionState((prev) => toggleExpansion(prev, node.id));
+          return;
+        }
+
+        try {
+          const c3Data = await fetchArchitecture(3, node.id);
+          if (c3Data.nodes.length === 0) {
+            setExpansionState((prev) => cacheChildArchitecture(prev, node.id, c3Data));
+            setError("This container has no components to expand.");
+            return;
+          }
+          setExpansionState((prev) => {
+            const withCache = cacheChildArchitecture(prev, node.id, c3Data);
+            return toggleExpansion(withCache, node.id);
+          });
+        } catch (err) {
+          setError(err instanceof Error ? err.message : "Failed to load components");
         }
       }
     },
-    [expansionState],
+    [expansionState, c2Architecture],
   );
 
   const handleNodeCollapse = useCallback((node: KeelNode) => {
-    setExpansionState((prev) => toggleExpansion(prev, node.id));
-  }, []);
+    setExpansionState((prev) => collapseSubtree(prev, node, c2Architecture));
+  }, [c2Architecture]);
 
   const handleCollapseAll = useCallback(() => {
     setExpansionState((prev) => collapseAll(prev));
@@ -484,7 +511,7 @@ export default function App() {
           <NodeDetailPanel
             node={selectedNode}
             isExpanded={selectedNode ? expansionState.expandedNodeIds.has(selectedNode.id) : false}
-            canExpand={selectedNode ? canNodeExpand(selectedNode) : false}
+            canExpand={selectedNode ? nodeHasExpandableChildren(selectedNode, expansionState, c2Architecture) : false}
             onExpand={(node) => void handleNodeExpand(node)}
             onCollapse={handleNodeCollapse}
             onClose={() => setSelectedNode(null)}

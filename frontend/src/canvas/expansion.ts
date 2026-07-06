@@ -159,6 +159,61 @@ export function canNodeExpand(node: KeelNode): boolean {
   return node.type === "system" || node.type === "container";
 }
 
+/** C2 containers that belong inline under an expanded system. */
+export function getSystemContainers(
+  systemId: string,
+  c2Architecture: ArchitectureFile | null,
+): KeelNode[] {
+  if (!c2Architecture) return [];
+
+  const c2Containers = c2Architecture.nodes.filter((n) => n.type === "container");
+  const hasParentIds = c2Containers.some((n) => n.parent_id);
+  return hasParentIds
+    ? c2Containers.filter((n) => n.parent_id === systemId)
+    : c2Containers;
+}
+
+/** Whether a node actually has child architecture to show when expanded. */
+export function nodeHasExpandableChildren(
+  node: KeelNode,
+  state: ExpansionState,
+  c2Architecture: ArchitectureFile | null,
+): boolean {
+  if (node.type === "system") {
+    return getSystemContainers(node.id, c2Architecture).length > 0;
+  }
+  if (node.type === "container") {
+    const c3 = getCachedArchitecture(state, node.id);
+    return (c3?.nodes.length ?? 0) > 0;
+  }
+  return false;
+}
+
+/** Collapse a node and any descendant expansions (e.g. containers inside a system). */
+export function collapseSubtree(
+  state: ExpansionState,
+  node: KeelNode,
+  c2Architecture: ArchitectureFile | null,
+): ExpansionState {
+  if (!state.expandedNodeIds.has(node.id)) {
+    return state;
+  }
+
+  const next = new Set(state.expandedNodeIds);
+  next.delete(node.id);
+
+  if (node.type === "system" && c2Architecture) {
+    for (const child of getSystemContainers(node.id, c2Architecture)) {
+      next.delete(child.id);
+    }
+  }
+
+  return {
+    ...state,
+    expandedNodeIds: next,
+  };
+}
+
 export function getChildLevel(node: KeelNode): number | null {
   if (node.type === "system") return 2;
   if (node.type === "container") return 3;
@@ -182,36 +237,30 @@ export function composeCanvas(
   // Add root-level (C1) nodes
   for (const node of rootArchitecture.nodes) {
     const expanded = state.expandedNodeIds.has(node.id);
-    const canExpand = canNodeExpand(node);
+    const hasChildren = nodeHasExpandableChildren(node, state, c2Architecture);
 
     composedNodes.push({
       ...node,
       depth: 1,
       parentGroupId: null,
       isExpanded: expanded,
-      hasChildren: canExpand,
+      hasChildren,
     });
 
     // If this node is expanded, add its children
     if (expanded && node.type === "system" && c2Architecture) {
-      // Filter C2 containers that belong to this system
-      // Only show containers that have parent_id matching this system
-      // If no containers have parent_id set, show all (legacy behavior)
-      const hasParentIds = c2Architecture.nodes.some((c2Node) => c2Node.parent_id);
-      const systemContainers = hasParentIds
-        ? c2Architecture.nodes.filter((c2Node) => c2Node.parent_id === node.id)
-        : c2Architecture.nodes; // Legacy: show all if no parent_ids are set
+      const systemContainers = getSystemContainers(node.id, c2Architecture);
 
       for (const child of systemContainers) {
         const childExpanded = state.expandedNodeIds.has(child.id);
-        const childCanExpand = canNodeExpand(child);
+        const hasChildChildren = nodeHasExpandableChildren(child, state, c2Architecture);
 
         composedNodes.push({
           ...child,
           depth: 2,
           parentGroupId: node.id,
           isExpanded: childExpanded,
-          hasChildren: childCanExpand,
+          hasChildren: hasChildChildren,
         });
 
         // If container is expanded, add C3 components

@@ -73,7 +73,7 @@ export function NodeDetailPanel({
     <div className="node-detail-panel">
       <div className="node-detail-header">
         <strong>{node.name}</strong>
-        <button onClick={onClose}>Close</button>
+        <button type="button" onClick={(event) => { event.stopPropagation(); onClose(); }}>Close</button>
       </div>
       <p className="node-detail-meta">
         <code>{node.id}</code> · {node.type}
