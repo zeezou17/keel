@@ -1,6 +1,6 @@
 # FP-008 — Delete node from the UI
 
-**Status:** In Progress  
+**Status:** Done  
 **Priority:** High (UX gap)  
 **Depends on:** WP-004  
 **Related:** [FP-002](planned-canvas-manual-editing.md) (broader manual editing), [FP-012](planned-undo-redo.md) (undo after delete)

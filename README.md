@@ -92,6 +92,7 @@ Run tests:
 
 ```bash
 pytest
+cd frontend && npm test
 ```
 
 ## Quick start
@@ -156,11 +157,13 @@ keel dev --path /path/to/repo
 
 ### Architecture canvas
 
-- **Navigate C4 levels** — Click a system (C1) or container (C2) to drill into the next level. Use breadcrumbs to go back.
-- **Add nodes** — Use **Add node** in the toolbar.
-- **Edit nodes** — Select a node to open the detail panel. Update name, description, technology, and **path globs** that bind the node to source files.
+- **Navigate C4 levels** — Click a node to select it and open the detail panel. Use **Expand** / **Collapse** (chevron or detail panel) to show containers or components inside a system without leaving the parent view. Use **Collapse all** or the **C1 Context** breadcrumb to reset. **View all C2** switches to a classic full-level diagram when you need an overview.
+- **Add nodes** — Use **Add node** in the toolbar. New nodes are created at the focused context (root level or inside an expanded branch).
+- **Delete nodes** — Select a node to open the detail panel, then click **Delete**. Empty nodes (no edges, children, linked docs, or path globs) are removed immediately; nodes with attachments ask for confirmation first.
 - **Move nodes** — Drag nodes on the canvas; positions are saved automatically.
-- **Commit** — Changes are written to `.keel/` immediately. Click **Commit** when the toolbar shows uncommitted changes to create a git commit.
+- **Commit** — Changes are written to `.keel/` immediately. When the toolbar shows **Uncommitted changes**, click **Commit** to create a git commit.
+
+Node field editing (name, description, path globs) and manual edge drawing are on the roadmap — see [features/README.md](features/README.md).
 
 ### Sidebar: Requirements, ADRs, Characteristics
 
@@ -240,7 +243,7 @@ python -m keel.action.drift_check
 
 ## API
 
-The dev server exposes a REST API under `/api/` for architecture, requirements, ADRs, characteristics, git status, commits, sparring, impact assessment, and work-package generation. The React frontend in `frontend/` consumes these endpoints.
+The dev server exposes a REST API under `/api/` for architecture (including `DELETE /api/architecture/node/{id}`), requirements, ADRs, characteristics, git status, commits, sparring, impact assessment, and work-package generation. The React frontend in `frontend/` consumes these endpoints.
 
 When developing the frontend separately:
 
