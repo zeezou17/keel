@@ -199,11 +199,12 @@ export function composeCanvas(
     // If this node is expanded, add its children
     if (expanded && node.type === "system" && c2Architecture) {
       // Filter C2 containers that belong to this system
-      // C2 nodes may have parent_id set to the system, or we show all containers
-      // when expanding any system (current API returns all C2 containers)
-      const systemContainers = c2Architecture.nodes.filter(
-        (c2Node) => c2Node.parent_id === node.id || !c2Node.parent_id
-      );
+      // Only show containers that have parent_id matching this system
+      // If no containers have parent_id set, show all (legacy behavior)
+      const hasParentIds = c2Architecture.nodes.some((c2Node) => c2Node.parent_id);
+      const systemContainers = hasParentIds
+        ? c2Architecture.nodes.filter((c2Node) => c2Node.parent_id === node.id)
+        : c2Architecture.nodes; // Legacy: show all if no parent_ids are set
 
       for (const child of systemContainers) {
         const childExpanded = state.expandedNodeIds.has(child.id);

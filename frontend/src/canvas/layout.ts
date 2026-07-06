@@ -81,6 +81,8 @@ export function calculateGroupBounds(
 /**
  * Position children inside an expanded group in a grid layout.
  * Returns new positions for children only.
+ * 
+ * Children are positioned relative to their parent, below it in a grid.
  */
 export function layoutChildrenInGroup(
   parentNode: Node,
@@ -104,17 +106,18 @@ export function layoutChildrenInGroup(
     const col = index % cols;
     const row = Math.floor(index / cols);
 
-    // Check if child already has a valid position (user-placed)
-    const hasUserPosition = 
-      child.position.x !== 0 && 
-      child.position.y !== 0 &&
-      !isDefaultGridPosition(child.position, index);
+    // Check if child already has a valid position that's near the parent
+    // (not at 0,0 and not a default grid position from before)
+    const hasPosition = child.position.x !== 0 || child.position.y !== 0;
+    const isNearParent = hasPosition && 
+      Math.abs(child.position.x - parentNode.position.x) < 800 &&
+      child.position.y > parentNode.position.y;
 
-    if (hasUserPosition) {
-      // Keep user's position
+    if (isNearParent) {
+      // Keep the existing position - it's a reasonable user placement
       positions.set(child.id, child.position);
     } else {
-      // Apply grid layout
+      // Apply grid layout relative to parent
       positions.set(child.id, {
         x: groupX + col * (opts.nodeWidth + opts.minSpacing),
         y: groupStartY + row * (opts.nodeHeight + opts.minSpacing),
@@ -123,17 +126,6 @@ export function layoutChildrenInGroup(
   });
 
   return positions;
-}
-
-/**
- * Check if a position looks like a default grid position (not user-placed).
- */
-function isDefaultGridPosition(pos: { x: number; y: number }, index: number): boolean {
-  // Check against common default positioning patterns
-  const defaultX = 120 + (index % 5) * 220;
-  const defaultY = 100 + Math.floor(index / 5) * 140;
-  
-  return Math.abs(pos.x - defaultX) < 10 && Math.abs(pos.y - defaultY) < 10;
 }
 
 /**

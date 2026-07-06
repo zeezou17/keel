@@ -132,8 +132,20 @@ function CanvasInner({
   ): Node[] {
     const result: Node[] = [];
 
+    // Get the set of expanded node IDs for quick lookup
+    const expandedIds = expansionState?.expandedNodeIds ?? new Set<string>();
+
     // Build regular nodes first (using saved positions)
     for (const node of composed) {
+      // Skip children whose parent is NOT expanded
+      // This prevents stray children from appearing after refresh
+      if (node.parentGroupId) {
+        const parentExpanded = expandedIds.has(node.parentGroupId);
+        if (!parentExpanded) {
+          continue; // Don't render this child
+        }
+      }
+
       const emphasized = checkEmphasized(node.id);
 
       result.push({
@@ -161,60 +173,64 @@ function CanvasInner({
       });
     }
 
-    // Add group frames for expanded nodes
+    // Add group frames for expanded nodes that have visible children
     for (const node of composed) {
-      if (node.isExpanded && node.hasChildren) {
-        const children = result.filter((n) => {
-          const data = n.data as { parentGroupId?: string };
-          return data.parentGroupId === node.id;
-        });
+      // Only add group if this node is actually expanded AND in the expanded set
+      if (!node.isExpanded || !expandedIds.has(node.id)) {
+        continue;
+      }
 
-        if (children.length > 0) {
-          const parentNode = result.find((n) => n.id === node.id);
-          if (parentNode) {
-            const colors = GROUP_COLORS[node.depth] ?? GROUP_COLORS[1];
-            const frame = calculateGroupFrame(parentNode, children);
+      const children = result.filter((n) => {
+        const data = n.data as { parentGroupId?: string };
+        return data.parentGroupId === node.id;
+      });
 
-            result.push({
-              id: `group-${node.id}`,
-              type: "default",
-              position: frame.position,
-              data: { label: "" },
-              style: {
-                width: frame.width,
-                height: frame.height,
-                border: `2px dashed ${colors.border}`,
-                borderRadius: 12,
-                background: colors.background,
-                zIndex: 0,
-                pointerEvents: "none" as const,
-              },
-              selectable: false,
-              draggable: false,
-            });
+      // Only add group frame if there are visible children
+      if (children.length > 0) {
+        const parentNode = result.find((n) => n.id === node.id);
+        if (parentNode) {
+          const colors = GROUP_COLORS[node.depth] ?? GROUP_COLORS[1];
+          const frame = calculateGroupFrame(parentNode, children);
 
-            result.push({
-              id: `group-header-${node.id}`,
-              type: "default",
-              position: { x: frame.position.x, y: frame.position.y - 28 },
-              data: {
-                label: `${node.name} · C${node.depth + 1} · ${children.length} children`,
-              },
-              style: {
-                background: colors.border,
-                color: "#ffffff",
-                padding: "4px 10px",
-                borderRadius: "8px 8px 0 0",
-                fontSize: "0.8rem",
-                fontWeight: 600,
-                border: "none",
-                zIndex: 1,
-                pointerEvents: "none" as const,
-              },
-              selectable: false,
-              draggable: false,
-            });
-          }
+          result.push({
+            id: `group-${node.id}`,
+            type: "default",
+            position: frame.position,
+            data: { label: "" },
+            style: {
+              width: frame.width,
+              height: frame.height,
+              border: `2px dashed ${colors.border}`,
+              borderRadius: 12,
+              background: colors.background,
+              zIndex: 0,
+              pointerEvents: "none" as const,
+            },
+            selectable: false,
+            draggable: false,
+          });
+
+          result.push({
+            id: `group-header-${node.id}`,
+            type: "default",
+            position: { x: frame.position.x, y: frame.position.y - 28 },
+            data: {
+              label: `${node.name} · C${node.depth + 1} · ${children.length} children`,
+            },
+            style: {
+              background: colors.border,
+              color: "#ffffff",
+              padding: "4px 10px",
+              borderRadius: "8px 8px 0 0",
+              fontSize: "0.8rem",
+              fontWeight: 600,
+              border: "none",
+              zIndex: 1,
+              pointerEvents: "none" as const,
+            },
+            selectable: false,
+            draggable: false,
+          });
         }
       }
     }
