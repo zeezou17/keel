@@ -44,6 +44,7 @@ Living index of Keel capabilities — what is shipped, what was enhanced after t
 | FP-013 | [Manual node linking (edges with text)](planned-manual-node-linking.md) | Backlog | Draw links between nodes; label relationships manually on the canvas |
 | FP-014 | [Node detail panel stale error state](planned-fix-node-detail-stale-state.md) | Backlog | Work package error persists when selecting a different node |
 | FP-015 | [Fixed viewport layout (chat growth)](planned-fix-viewport-layout-overflow.md) | Backlog | Long chat expands page height; detail panel and controls pushed off-screen |
+| FP-016 | [GitHub Pages documentation site](planned-github-pages-docs.md) | Backlog | User guide on GitHub Pages — install, UI tour, drift, how to use Keel |
 
 ## How to use this folder
 
