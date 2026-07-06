@@ -12,6 +12,7 @@ import type { Node } from "@xyflow/react";
 import {
   commitChanges,
   createNode,
+  deleteNode,
   fetchArchitecture,
   fetchGitStatus,
   saveArchitecture,
@@ -40,6 +41,7 @@ import {
   getSystemContainers,
 } from "./canvas/expansion";
 import { buildPositionPersistRequests } from "./canvas/persistPositions";
+import type { NodeEmptyContext } from "./canvas/nodeEmpty";
 import { Canvas } from "./components/Canvas";
 import { NodeDetailPanel } from "./components/NodeDetailPanel";
 import { Sidebar } from "./components/Sidebar";
@@ -110,6 +112,15 @@ export default function App() {
     }
     return getAddNodeContext(expansionState, selectedNode);
   }, [expansionState, selectedNode, fullLevelView]);
+
+  const nodeEmptyContext = useMemo<NodeEmptyContext>(
+    () => ({
+      c1Architecture,
+      c2Architecture,
+      expansionState,
+    }),
+    [c1Architecture, c2Architecture, expansionState],
+  );
 
   // -- Breadcrumbs for current view -------------------------------------------
   const breadcrumbs = useMemo(() => {
@@ -374,6 +385,42 @@ export default function App() {
     await refreshGitStatus();
   }, [addNodeContext, c1Architecture, c2Architecture, expansionState, fullLevelView, refreshGitStatus]);
 
+  const handleDeleteNode = useCallback(
+    async (node: KeelNode) => {
+      const updated = await deleteNode(node.id);
+
+      if (updated.level === 1) {
+        setC1Architecture(updated);
+      } else if (updated.level === 2) {
+        setC2Architecture(updated);
+      } else if (updated.level === 3 && updated.container_id) {
+        setExpansionState((prev) => cacheChildArchitecture(prev, updated.container_id!, updated));
+      }
+
+      if (fullLevelView?.level === updated.level) {
+        setFullLevelArchitecture(updated);
+      }
+
+      setExpansionState((prev) => {
+        const collapsed = collapseSubtree(prev, node, c2Architecture, c1Architecture);
+        const nextExpanded = new Set(collapsed.expandedNodeIds);
+        nextExpanded.delete(node.id);
+        const nextCache = new Map(collapsed.childArchitectureCache);
+        nextCache.delete(node.id);
+        return {
+          ...collapsed,
+          expandedNodeIds: nextExpanded,
+          childArchitectureCache: nextCache,
+        };
+      });
+
+      setSelectedNode(null);
+      setHighlightedNodeIds((current) => current.filter((id) => id !== node.id));
+      await refreshGitStatus();
+    },
+    [c1Architecture, c2Architecture, fullLevelView, refreshGitStatus],
+  );
+
   const reloadArchitecture = useCallback(async () => {
     await loadInitialArchitecture();
   }, [loadInitialArchitecture]);
@@ -537,8 +584,10 @@ export default function App() {
             node={selectedNode}
             isExpanded={selectedNode ? expansionState.expandedNodeIds.has(selectedNode.id) : false}
             canExpand={selectedNode ? nodeHasExpandableChildren(selectedNode, expansionState, c2Architecture, c1Architecture) : false}
+            emptyContext={nodeEmptyContext}
             onExpand={(node) => void handleNodeExpand(node)}
             onCollapse={handleNodeCollapse}
+            onDelete={handleDeleteNode}
             onClose={() => setSelectedNode(null)}
             onGenerated={() => void refreshGitStatus()}
           />

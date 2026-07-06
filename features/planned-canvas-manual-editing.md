@@ -29,6 +29,8 @@ Users need to correct AI mistakes without editing JSON by hand.
 
 ### Edge editing (canvas)
 
+See also [FP-013](planned-manual-node-linking.md) for the focused backlog item on manual linking with text labels.
+
 - **Add edge** — connect two nodes via React Flow connection line (`onConnect`)
   - Prompt for edge `type` / `label` (or sensible defaults)
   - Generate stable `edge_*` id

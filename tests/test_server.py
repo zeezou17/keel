@@ -110,3 +110,39 @@ def test_git_status_and_commit(client: TestClient, repo_with_architecture: Path)
 
     status_after = client.get("/api/git/status")
     assert status_after.json()["dirty"] is False
+
+
+def test_delete_node_removes_node_and_edges(client: TestClient, repo_with_architecture: Path) -> None:
+    current = client.get("/api/architecture/1").json()
+    current["nodes"].append(
+        {
+            "id": "node_person",
+            "type": "person",
+            "level": 1,
+            "name": "User",
+            "description": "Uses the system",
+            "paths": [],
+        }
+    )
+    current["edges"] = [
+        {
+            "id": "edge_uses",
+            "type": "uses",
+            "source_id": "node_person",
+            "target_id": "node_main-system",
+        }
+    ]
+    client.put("/api/architecture/1", json=current)
+
+    response = client.delete("/api/architecture/node/node_main-system")
+    assert response.status_code == 200
+
+    data = response.json()
+    assert all(node["id"] != "node_main-system" for node in data["nodes"])
+    assert data["edges"] == []
+
+    reloaded = json.loads(
+        (repo_with_architecture / ".keel/architecture/c1-context.json").read_text(encoding="utf-8")
+    )
+    assert all(node["id"] != "node_main-system" for node in reloaded["nodes"])
+    assert reloaded["edges"] == []
