@@ -31,15 +31,19 @@ Living index of Keel capabilities — what is shipped, what was enhanced after t
 |----|---------|--------|--------|
 | FP-001 | [Resizable sidebars](planned-resizable-sidebars.md) | Planned | Drag-to-resize left docs panel and right sparring panel |
 | FP-002 | [Canvas manual editing](planned-canvas-manual-editing.md) | Planned | Edit/delete nodes and add edges manually on the diagram |
-| FP-003 | [Selective drill-down](planned-selective-drill-down.md) | In Progress | Expand one branch in place; keep sibling nodes visible; multi-expand + collapse |
+| FP-003 | [Selective drill-down](planned-selective-drill-down.md) | Done | Expand one branch in place; keep sibling nodes visible; multi-expand + collapse |
 | FP-004 | [UML and multi-viewpoint diagrams](planned-uml-and-multi-viewpoint-diagrams.md) | Backlog | UML (class, sequence, …) and other notations beyond C4; research phase first |
 | FP-005 | [UI theme and color palette refresh](planned-ui-theme-refresh.md) | Backlog | Visual refresh of colors, typography, and component styling after core UX features ship |
 | FP-006 | [Fix add-node targeting and parent linking](planned-fix-add-node-targeting.md) | Backlog | Add node creates nodes at wrong level/parent; spurious links to containers |
 | FP-007 | [Fix “View all C2” escape hatch](planned-fix-view-all-c2.md) | Backlog | Overview mode feels like collapse; expansion state lost on exit |
-| FP-008 | [Delete node from the UI](planned-fix-delete-node.md) | Backlog | No way to remove a node after creation; API exists, UI does not |
+| FP-008 | [Delete node from the UI](planned-fix-delete-node.md) | Done | Delete from node detail panel; empty nodes delete immediately, others confirm |
 | FP-009 | [Fix drag-and-drop position persistence](planned-fix-position-persistence.md) | Backlog | Dragged node positions reset on reload, re-expand, or overview mode |
 | FP-010 | [Docker image and GitHub Actions CI](planned-docker-and-ci.md) | Backlog | No Dockerfile or project CI; pytest/vitest not run on PRs |
 | FP-011 | [Cross-platform support (beyond Ubuntu)](planned-cross-platform-support.md) | Backlog | macOS/Windows untested; bash-only build scripts; path/git edge cases |
+| FP-012 | [Undo and redo](planned-undo-redo.md) | Backlog | Reverse canvas edits (delete, add, move, edit) in the current session |
+| FP-013 | [Manual node linking (edges with text)](planned-manual-node-linking.md) | Backlog | Draw links between nodes; label relationships manually on the canvas |
+| FP-014 | [Node detail panel stale error state](planned-fix-node-detail-stale-state.md) | Backlog | Work package error persists when selecting a different node |
+| FP-015 | [Fixed viewport layout (chat growth)](planned-fix-viewport-layout-overflow.md) | Backlog | Long chat expands page height; detail panel and controls pushed off-screen |
 
 ## How to use this folder
 

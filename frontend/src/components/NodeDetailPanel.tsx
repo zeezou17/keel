@@ -1,19 +1,28 @@
 /**
  * Floating panel when a diagram node is selected.
- * Shows metadata, expand/collapse controls, and work package generation.
+ * Shows metadata, expand/collapse controls, delete, and work package generation.
  *
  * FP-003: Replaced "Drill down" with Expand/Collapse for selective drill-down.
+ * FP-008: Delete node — empty nodes delete immediately; others require confirmation.
  */
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import { generateWorkPackage, type KeelNode } from "../api/client";
+import type { NodeEmptyContext } from "../canvas/nodeEmpty";
+import {
+  buildDeleteConfirmMessage,
+  getNodeNonemptyReasons,
+  isNodeEmpty,
+} from "../canvas/nodeEmpty";
 
 interface NodeDetailPanelProps {
   node: KeelNode | null;
   isExpanded: boolean;
   canExpand: boolean;
+  emptyContext: NodeEmptyContext;
   onExpand: (node: KeelNode) => void;
   onCollapse: (node: KeelNode) => void;
+  onDelete: (node: KeelNode) => Promise<void>;
   onClose: () => void;
   onGenerated: () => void;
 }
@@ -22,14 +31,22 @@ export function NodeDetailPanel({
   node,
   isExpanded,
   canExpand,
+  emptyContext,
   onExpand,
   onCollapse,
+  onDelete,
   onClose,
   onGenerated,
 }: NodeDetailPanelProps) {
   const [loading, setLoading] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const empty = useMemo(
+    () => (node ? isNodeEmpty(node, emptyContext) : true),
+    [node, emptyContext],
+  );
 
   if (!node) {
     return null;
@@ -64,6 +81,31 @@ export function NodeDetailPanel({
       onCollapse(node);
     } else {
       onExpand(node);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (deleting) {
+      return;
+    }
+
+    if (!empty) {
+      const reasons = getNodeNonemptyReasons(node, emptyContext);
+      const confirmed = window.confirm(buildDeleteConfirmMessage(node, reasons));
+      if (!confirmed) {
+        return;
+      }
+    }
+
+    setDeleting(true);
+    setError(null);
+    setMessage(null);
+    try {
+      await onDelete(node);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete node.");
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -117,7 +159,16 @@ export function NodeDetailPanel({
       {error ? <div className="panel-error">{error}</div> : null}
       {message ? <div className="node-detail-success">{message}</div> : null}
       <div className="node-detail-actions">
-        <button onClick={() => void handleGenerate()} disabled={loading}>
+        <button
+          type="button"
+          className="node-detail-delete-button"
+          onClick={() => void handleDelete()}
+          disabled={deleting || loading}
+          title={empty ? "Delete this empty node" : "Delete node (confirmation required)"}
+        >
+          {deleting ? "Deleting…" : "Delete"}
+        </button>
+        <button onClick={() => void handleGenerate()} disabled={loading || deleting}>
           {loading ? "Generating…" : "Generate work package"}
         </button>
       </div>

@@ -136,6 +136,25 @@ body {
   display: flex;
   gap: 0.5rem;
   margin-top: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.node-detail-delete-button {
+  border: 0;
+  background: #9b2226;
+  color: white;
+  border-radius: 6px;
+  padding: 0.45rem 0.7rem;
+  cursor: pointer;
+}
+
+.node-detail-delete-button:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.node-detail-delete-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .node-detail-expand-section {

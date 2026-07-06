@@ -1,9 +1,9 @@
 # FP-008 — Delete node from the UI
 
-**Status:** Backlog  
+**Status:** Done  
 **Priority:** High (UX gap)  
 **Depends on:** WP-004  
-**Related:** [FP-002](planned-canvas-manual-editing.md) (broader manual editing)
+**Related:** [FP-002](planned-canvas-manual-editing.md) (broader manual editing), [FP-012](planned-undo-redo.md) (undo after delete)
 
 ## Problem
 
@@ -24,10 +24,12 @@ The node detail panel (`frontend/src/components/NodeDetailPanel.tsx`) is read-on
 
 ## Expected behavior
 
-- User selects a node → detail panel offers **Delete** with confirmation.
+- User selects a node → detail panel shows **Delete** (appears on click/selection).
+- **Empty node** (no edges, children, linked requirements/ADRs, or path globs) → deletes immediately.
+- **Non-empty node** → confirmation dialog listing what is attached; user must confirm.
 - Confirming removes the node and its edges from the correct architecture file (C1, C2, or C3 container scope).
 - Canvas and expansion cache refresh; git dirty indicator updates.
-- If the node has children (e.g. deleting a system with containers), show clear warning and define behavior (block, cascade, or orphan — recommend **block or cascade with explicit confirm**).
+- If the node has children (e.g. deleting a system with containers), treat as non-empty and require confirmation.
 
 ## Proposed solution
 
@@ -75,7 +77,7 @@ Clear selection if the deleted node was selected. Collapse expansion subtree if 
 ## Out of scope (v1)
 
 - Bulk multi-select delete
-- Undo/redo
+- Undo/redo (see [FP-012](planned-undo-redo.md))
 - Full inline edit of node fields (see FP-002)
 
 ## Note on FP-002

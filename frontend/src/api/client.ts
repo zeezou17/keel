@@ -122,6 +122,12 @@ export function updateNode(nodeId: string, node: KeelNode) {
   });
 }
 
+export function deleteNode(nodeId: string) {
+  return request<ArchitectureFile>(`/api/architecture/node/${encodeURIComponent(nodeId)}`, {
+    method: "DELETE",
+  });
+}
+
 // -- Git status and commit from the toolbar ----------------------------------
 
 export function fetchGitStatus() {
