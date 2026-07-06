@@ -7,6 +7,7 @@ import {
   composeCanvas,
   createExpansionState,
   expandNode,
+  getLegacyPrimarySystemId,
   getSystemContainers,
   loadExpansionState,
   nodeHasExpandableChildren,
@@ -68,8 +69,54 @@ const c2: ArchitectureFile = {
 
 describe("getSystemContainers", () => {
   it("returns only containers for the system, not externals", () => {
-    const containers = getSystemContainers("sys_1", c2);
+    const containers = getSystemContainers("sys_1", c2, c1);
     expect(containers.map((n) => n.id)).toEqual(["ctr_a", "ctr_b"]);
+  });
+
+  it("returns no legacy containers for a non-sole system when parent_id is missing", () => {
+    const legacyC2: ArchitectureFile = {
+      schema_version: 1,
+      level: 2,
+      nodes: [
+        { ...containerA, parent_id: undefined },
+        { ...containerB, parent_id: undefined },
+        external,
+      ],
+      edges: [],
+    };
+    const multiC1: ArchitectureFile = {
+      ...c1,
+      nodes: [
+        system,
+        {
+          id: "sys_2",
+          type: "system",
+          level: 1,
+          name: "Other",
+          description: "",
+          paths: [],
+        },
+      ],
+      edges: [
+        {
+          id: "e1",
+          type: "uses",
+          source_id: "ext_1",
+          target_id: "sys_1",
+        },
+      ],
+    };
+
+    expect(getLegacyPrimarySystemId(multiC1)).toBe("sys_1");
+    expect(getSystemContainers("sys_1", legacyC2, multiC1).map((n) => n.id)).toEqual([
+      "ctr_a",
+      "ctr_b",
+    ]);
+    expect(getSystemContainers("sys_2", legacyC2, multiC1)).toEqual([]);
+  });
+
+  it("returns all legacy containers for the sole C1 system", () => {
+    expect(getSystemContainers("sys_1", c2, c1).length).toBe(2);
   });
 });
 
@@ -155,7 +202,7 @@ describe("collapseSubtree", () => {
     state = expandNode(state, "sys_1");
     state = expandNode(state, "ctr_a");
 
-    state = collapseSubtree(state, system, c2);
+    state = collapseSubtree(state, system, c2, c1);
 
     expect(state.expandedNodeIds.has("sys_1")).toBe(false);
     expect(state.expandedNodeIds.has("ctr_a")).toBe(false);
@@ -163,7 +210,7 @@ describe("collapseSubtree", () => {
 
   it("is a no-op when the node is already collapsed", () => {
     const state = createExpansionState();
-    const next = collapseSubtree(state, system, c2);
+    const next = collapseSubtree(state, system, c2, c1);
     expect(next).toBe(state);
   });
 });

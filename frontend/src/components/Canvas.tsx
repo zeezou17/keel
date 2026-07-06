@@ -26,7 +26,7 @@ import "@xyflow/react/dist/style.css";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { ArchitectureFile, KeelNode } from "../api/client";
-import type { ComposedNode, ExpansionState } from "../canvas/expansion";
+import type { ComposedEdge, ComposedNode, ExpansionState } from "../canvas/expansion";
 import { canNodeExpand } from "../canvas/expansion";
 import {
   applyInitialLayout,
@@ -44,10 +44,12 @@ const nodeTypes = {
 interface CanvasProps {
   architecture: ArchitectureFile;
   composedNodes?: ComposedNode[];
+  composedEdges?: ComposedEdge[];
   expansionState?: ExpansionState;
   highlightedNodeIds?: string[];
   selectedNodeId?: string | null;
   onArchitectureChange: (architecture: ArchitectureFile, level: number, containerId?: string | null) => void;
+  onPersistPositions?: (flowNodes: Node[]) => void;
   onNodeSelect?: (node: KeelNode | null) => void;
   onNodeExpand?: (node: KeelNode) => void;
   onNodeCollapse?: (node: KeelNode) => void;
@@ -57,10 +59,12 @@ interface CanvasProps {
 function CanvasInner({
   architecture,
   composedNodes,
+  composedEdges,
   expansionState,
   highlightedNodeIds = [],
   selectedNodeId = null,
   onArchitectureChange,
+  onPersistPositions,
   onNodeSelect,
   onNodeExpand,
   onNodeCollapse,
@@ -70,8 +74,20 @@ function CanvasInner({
   const highlightSet = useMemo(() => new Set(highlightedNodeIds), [highlightedNodeIds]);
   const previousExpansionRef = useRef<Set<string>>(new Set());
   const nodesRef = useRef<Node[]>([]);
+  const animationTokenRef = useRef(0);
+  const animationFrameRef = useRef<number | null>(null);
   const [nodes, setNodes] = useState<Node[]>([]);
   const [isInitialized, setIsInitialized] = useState(false);
+
+  const cancelAnimation = useCallback(() => {
+    if (animationFrameRef.current !== null) {
+      cancelAnimationFrame(animationFrameRef.current);
+      animationFrameRef.current = null;
+    }
+    animationTokenRef.current += 1;
+  }, []);
+
+  useEffect(() => () => cancelAnimation(), [cancelAnimation]);
 
   const isEmphasized = useCallback(
     (nodeId: string) => highlightSet.has(nodeId) || nodeId === selectedNodeId,
@@ -190,14 +206,42 @@ function CanvasInner({
   }
 
   const buildEdges = useCallback((): Edge[] => {
-    return architecture.edges.map((edge) => ({
+    const rootEdges = architecture.edges.map((edge) => ({
       id: edge.id,
       source: edge.source_id,
       target: edge.target_id,
       label: edge.label ?? edge.type,
       style: { zIndex: 5 },
     }));
-  }, [architecture.edges]);
+
+    if (!composedEdges || !composedNodes || !expansionState) {
+      return rootEdges;
+    }
+
+    const expandedIds = expansionState.expandedNodeIds;
+    const visibleIds = new Set<string>();
+    for (const node of composedNodes) {
+      if (node.parentGroupId && !expandedIds.has(node.parentGroupId)) {
+        continue;
+      }
+      visibleIds.add(node.id);
+    }
+
+    const innerEdges = composedEdges
+      .filter((edge) => visibleIds.has(edge.source_id) && visibleIds.has(edge.target_id))
+      .map((edge) => ({
+        id: edge.id,
+        source: edge.source_id,
+        target: edge.target_id,
+        label: edge.label ?? edge.type,
+        style: { zIndex: edge.depth > 1 ? 6 : 5 },
+      }));
+
+    const byId = new Map<string, Edge>();
+    for (const edge of rootEdges) byId.set(edge.id, edge);
+    for (const edge of innerEdges) byId.set(edge.id, edge);
+    return [...byId.values()];
+  }, [architecture.edges, composedEdges, composedNodes, expansionState]);
 
   const edges = useMemo(() => buildEdges(), [buildEdges]);
 
@@ -227,6 +271,7 @@ function CanvasInner({
     }
 
     if (expansionChanged) {
+      cancelAnimation();
       let updatedNodes = mergeFromCanvas(rawNodes);
 
       for (const expandedId of newlyExpanded) {
@@ -271,7 +316,9 @@ function CanvasInner({
         return;
       }
 
-      animateToPositions(nodes, updatedNodes, () => {
+      const token = animationTokenRef.current;
+      animateToPositions(nodes, updatedNodes, token, () => {
+        if (token !== animationTokenRef.current) return;
         setNodes(updatedNodes);
         setTimeout(() => fitView({ padding: 0.2, duration: 200 }), 50);
       });
@@ -286,12 +333,12 @@ function CanvasInner({
         return rebuildGroupFrames(merged, currentExpanded);
       });
     }
-  }, [buildNodes, expansionState?.expandedNodeIds, isInitialized, fitView]);
+  }, [buildNodes, expansionState?.expandedNodeIds, isInitialized, fitView, cancelAnimation]);
 
-  // Animation helper
   const animateToPositions = (
     fromNodes: Node[],
     toNodes: Node[],
+    token: number,
     onComplete: () => void
   ) => {
     const duration = 250;
@@ -299,6 +346,11 @@ function CanvasInner({
     const fromPositions = new Map(fromNodes.map((n) => [n.id, n.position]));
 
     const animate = (currentTime: number) => {
+      if (token !== animationTokenRef.current) {
+        animationFrameRef.current = null;
+        return;
+      }
+
       const elapsed = currentTime - startTime;
       const progress = Math.min(elapsed / duration, 1);
       const eased = easeOutCubic(progress);
@@ -319,17 +371,25 @@ function CanvasInner({
       setNodes(interpolatedNodes);
 
       if (progress < 1) {
-        requestAnimationFrame(animate);
+        animationFrameRef.current = requestAnimationFrame(animate);
       } else {
-        onComplete();
+        animationFrameRef.current = null;
+        if (token === animationTokenRef.current) {
+          onComplete();
+        }
       }
     };
 
-    requestAnimationFrame(animate);
+    animationFrameRef.current = requestAnimationFrame(animate);
   };
 
   const persistPositions = useCallback(
     (nextNodes: Node[]) => {
+      if (onPersistPositions) {
+        onPersistPositions(nextNodes);
+        return;
+      }
+
       const updated: ArchitectureFile = {
         ...architecture,
         nodes: architecture.nodes.map((node) => {
@@ -344,7 +404,7 @@ function CanvasInner({
       };
       onArchitectureChange(updated, architecture.level, architecture.container_id);
     },
-    [architecture, onArchitectureChange],
+    [architecture, onArchitectureChange, onPersistPositions],
   );
 
   const onNodesChange = useCallback(

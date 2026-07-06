@@ -159,18 +159,60 @@ export function canNodeExpand(node: KeelNode): boolean {
   return node.type === "system" || node.type === "container";
 }
 
+/** For legacy C2 files without parent_id, pick the main C1 system by edge connectivity. */
+export function getLegacyPrimarySystemId(c1Architecture: ArchitectureFile | null): string | null {
+  if (!c1Architecture) return null;
+
+  const systems = c1Architecture.nodes.filter((n) => n.type === "system");
+  if (systems.length === 0) return null;
+  if (systems.length === 1) return systems[0].id;
+
+  const edgeCount = new Map<string, number>();
+  for (const system of systems) {
+    edgeCount.set(system.id, 0);
+  }
+
+  for (const edge of c1Architecture.edges) {
+    if (edgeCount.has(edge.source_id)) {
+      edgeCount.set(edge.source_id, (edgeCount.get(edge.source_id) ?? 0) + 1);
+    }
+    if (edgeCount.has(edge.target_id)) {
+      edgeCount.set(edge.target_id, (edgeCount.get(edge.target_id) ?? 0) + 1);
+    }
+  }
+
+  return systems.reduce((best, system) =>
+    (edgeCount.get(system.id) ?? 0) > (edgeCount.get(best.id) ?? 0) ? system : best,
+  ).id;
+}
+
 /** C2 containers that belong inline under an expanded system. */
 export function getSystemContainers(
   systemId: string,
   c2Architecture: ArchitectureFile | null,
+  c1Architecture: ArchitectureFile | null = null,
 ): KeelNode[] {
   if (!c2Architecture) return [];
 
   const c2Containers = c2Architecture.nodes.filter((n) => n.type === "container");
   const hasParentIds = c2Containers.some((n) => n.parent_id);
-  return hasParentIds
-    ? c2Containers.filter((n) => n.parent_id === systemId)
-    : c2Containers;
+  if (hasParentIds) {
+    return c2Containers.filter((n) => n.parent_id === systemId);
+  }
+
+  // Legacy files without parent_id
+  const c1Systems = c1Architecture?.nodes.filter((n) => n.type === "system") ?? [];
+  if (c1Systems.length === 1 && c1Systems[0].id === systemId) {
+    return c2Containers;
+  }
+
+  // Multiple C1 systems: attach legacy containers to the most-connected (main) system
+  const primarySystemId = getLegacyPrimarySystemId(c1Architecture);
+  if (primarySystemId === systemId) {
+    return c2Containers;
+  }
+
+  return [];
 }
 
 /** Whether a node actually has child architecture to show when expanded. */
@@ -178,9 +220,10 @@ export function nodeHasExpandableChildren(
   node: KeelNode,
   state: ExpansionState,
   c2Architecture: ArchitectureFile | null,
+  c1Architecture: ArchitectureFile | null = null,
 ): boolean {
   if (node.type === "system") {
-    return getSystemContainers(node.id, c2Architecture).length > 0;
+    return getSystemContainers(node.id, c2Architecture, c1Architecture).length > 0;
   }
   if (node.type === "container") {
     const c3 = getCachedArchitecture(state, node.id);
@@ -194,6 +237,7 @@ export function collapseSubtree(
   state: ExpansionState,
   node: KeelNode,
   c2Architecture: ArchitectureFile | null,
+  c1Architecture: ArchitectureFile | null = null,
 ): ExpansionState {
   if (!state.expandedNodeIds.has(node.id)) {
     return state;
@@ -203,7 +247,7 @@ export function collapseSubtree(
   next.delete(node.id);
 
   if (node.type === "system" && c2Architecture) {
-    for (const child of getSystemContainers(node.id, c2Architecture)) {
+    for (const child of getSystemContainers(node.id, c2Architecture, c1Architecture)) {
       next.delete(child.id);
     }
   }
@@ -237,7 +281,7 @@ export function composeCanvas(
   // Add root-level (C1) nodes
   for (const node of rootArchitecture.nodes) {
     const expanded = state.expandedNodeIds.has(node.id);
-    const hasChildren = nodeHasExpandableChildren(node, state, c2Architecture);
+    const hasChildren = nodeHasExpandableChildren(node, state, c2Architecture, rootArchitecture);
 
     composedNodes.push({
       ...node,
@@ -249,11 +293,11 @@ export function composeCanvas(
 
     // If this node is expanded, add its children
     if (expanded && node.type === "system" && c2Architecture) {
-      const systemContainers = getSystemContainers(node.id, c2Architecture);
+      const systemContainers = getSystemContainers(node.id, c2Architecture, rootArchitecture);
 
       for (const child of systemContainers) {
         const childExpanded = state.expandedNodeIds.has(child.id);
-        const hasChildChildren = nodeHasExpandableChildren(child, state, c2Architecture);
+        const hasChildChildren = nodeHasExpandableChildren(child, state, c2Architecture, rootArchitecture);
 
         composedNodes.push({
           ...child,

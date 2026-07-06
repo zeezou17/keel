@@ -7,6 +7,7 @@
  * FP-003: Selective drill-down replaces full level switching with expand-in-place.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
+import type { Node } from "@xyflow/react";
 
 import {
   commitChanges,
@@ -38,6 +39,7 @@ import {
   nodeHasExpandableChildren,
   getSystemContainers,
 } from "./canvas/expansion";
+import { buildPositionPersistRequests } from "./canvas/persistPositions";
 import { Canvas } from "./components/Canvas";
 import { NodeDetailPanel } from "./components/NodeDetailPanel";
 import { Sidebar } from "./components/Sidebar";
@@ -224,23 +226,25 @@ export default function App() {
       if (!childLevel) return;
 
       if (childLevel === 2) {
-        if (!nodeHasExpandableChildren(node, expansionState, c2Architecture)) {
+        if (!nodeHasExpandableChildren(node, expansionState, c2Architecture, c1Architecture)) {
           setError("This system has no containers to expand.");
           return;
         }
         setExpansionState((prev) => toggleExpansion(prev, node.id));
 
         // Prefetch C3 files so containers with components get chevrons
-        const containers = getSystemContainers(node.id, c2Architecture);
+        const containers = getSystemContainers(node.id, c2Architecture, c1Architecture);
         for (const container of containers) {
-          if (getCachedArchitecture(expansionState, container.id)) continue;
-          void fetchArchitecture(3, container.id)
-            .then((c3Data) => {
-              setExpansionState((prev) => cacheChildArchitecture(prev, container.id, c3Data));
-            })
-            .catch(() => {
+          void (async () => {
+            const cached = getCachedArchitecture(expansionState, container.id);
+            if (cached) return;
+            try {
+              const c3Data = await fetchArchitecture(3, container.id);
+              setExpansionState((current) => cacheChildArchitecture(current, container.id, c3Data));
+            } catch {
               // No C3 file for this container — expected for most containers
-            });
+            }
+          })();
         }
       } else if (childLevel === 3) {
         const cached = getCachedArchitecture(expansionState, node.id);
@@ -269,12 +273,30 @@ export default function App() {
         }
       }
     },
-    [expansionState, c2Architecture],
+    [expansionState, c2Architecture, c1Architecture],
   );
 
   const handleNodeCollapse = useCallback((node: KeelNode) => {
-    setExpansionState((prev) => collapseSubtree(prev, node, c2Architecture));
-  }, [c2Architecture]);
+    setExpansionState((prev) => collapseSubtree(prev, node, c2Architecture, c1Architecture));
+  }, [c2Architecture, c1Architecture]);
+
+  const handlePersistPositions = useCallback(
+    (flowNodes: Node[]) => {
+      if (!c1Architecture) return;
+
+      const requests = buildPositionPersistRequests(
+        flowNodes,
+        c1Architecture,
+        c2Architecture,
+        expansionState,
+      );
+
+      for (const request of requests) {
+        void persistArchitecture(request.architecture, request.level, request.containerId);
+      }
+    },
+    [c1Architecture, c2Architecture, expansionState, persistArchitecture],
+  );
 
   const handleCollapseAll = useCallback(() => {
     setExpansionState((prev) => collapseAll(prev));
@@ -441,6 +463,7 @@ export default function App() {
   // Determine which architecture to show
   const displayArchitecture = fullLevelArchitecture ?? c1Architecture;
   const displayComposedNodes = fullLevelView ? undefined : composedCanvas?.nodes;
+  const displayComposedEdges = fullLevelView ? undefined : composedCanvas?.edges;
 
   const hasExpansions = expansionState.expandedNodeIds.size > 0 || fullLevelView !== null;
 
@@ -499,10 +522,12 @@ export default function App() {
           <Canvas
             architecture={displayArchitecture}
             composedNodes={displayComposedNodes}
+            composedEdges={displayComposedEdges}
             expansionState={expansionState}
             highlightedNodeIds={highlightedNodeIds}
             selectedNodeId={selectedNode?.id ?? null}
             onArchitectureChange={(next, level, containerId) => void persistArchitecture(next, level, containerId)}
+            onPersistPositions={fullLevelView ? undefined : handlePersistPositions}
             onNodeSelect={(node) => setSelectedNode(node)}
             onNodeExpand={(node) => void handleNodeExpand(node)}
             onNodeCollapse={handleNodeCollapse}
@@ -511,7 +536,7 @@ export default function App() {
           <NodeDetailPanel
             node={selectedNode}
             isExpanded={selectedNode ? expansionState.expandedNodeIds.has(selectedNode.id) : false}
-            canExpand={selectedNode ? nodeHasExpandableChildren(selectedNode, expansionState, c2Architecture) : false}
+            canExpand={selectedNode ? nodeHasExpandableChildren(selectedNode, expansionState, c2Architecture, c1Architecture) : false}
             onExpand={(node) => void handleNodeExpand(node)}
             onCollapse={handleNodeCollapse}
             onClose={() => setSelectedNode(null)}
