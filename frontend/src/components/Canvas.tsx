@@ -135,11 +135,19 @@ function CanvasInner({
     // Get the set of expanded node IDs for quick lookup
     const expandedIds = expansionState?.expandedNodeIds ?? new Set<string>();
 
+    // Build a set of valid parent IDs (nodes that exist in the composed list)
+    const validParentIds = new Set(composed.map((n) => n.id));
+
     // Build regular nodes first (using saved positions)
     for (const node of composed) {
       // Skip children whose parent is NOT expanded
       // This prevents stray children from appearing after refresh
       if (node.parentGroupId) {
+        // First check if parent exists in the current view
+        if (!validParentIds.has(node.parentGroupId)) {
+          continue; // Parent doesn't exist, skip this orphan
+        }
+        // Then check if parent is expanded
         const parentExpanded = expandedIds.has(node.parentGroupId);
         if (!parentExpanded) {
           continue; // Don't render this child

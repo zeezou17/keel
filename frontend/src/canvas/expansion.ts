@@ -42,30 +42,26 @@ export function createExpansionState(): ExpansionState {
 }
 
 export function loadExpansionState(): ExpansionState {
+  // On page refresh, start fresh with no expanded nodes.
+  // The child architecture cache is not persisted, so restoring expanded IDs
+  // without their children causes orphan nodes and visual glitches.
+  // Users can re-expand nodes to restore their previous view.
+  
+  // Clear any stale localStorage data from previous versions
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) {
-      return createExpansionState();
-    }
-    const parsed = JSON.parse(raw) as PersistedExpansionState;
-    return {
-      expandedNodeIds: new Set(parsed.expandedNodeIds ?? []),
-      childArchitectureCache: new Map(),
-    };
+    localStorage.removeItem(STORAGE_KEY);
   } catch {
-    return createExpansionState();
+    // Ignore storage errors
   }
+  
+  return createExpansionState();
 }
 
-export function saveExpansionState(state: ExpansionState): void {
-  const persisted: PersistedExpansionState = {
-    expandedNodeIds: Array.from(state.expandedNodeIds),
-  };
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(persisted));
-  } catch {
-    // Storage full or unavailable
-  }
+export function saveExpansionState(_state: ExpansionState): void {
+  // No-op: Expansion state is no longer persisted to localStorage.
+  // The child architecture cache is not persisted, so restoring expanded IDs
+  // without their children causes orphan nodes and visual glitches.
+  // Users re-expand nodes when they return to the page.
 }
 
 export function isExpanded(state: ExpansionState, nodeId: string): boolean {

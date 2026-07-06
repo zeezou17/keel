@@ -131,6 +131,9 @@ export function layoutChildrenInGroup(
 /**
  * Push overlapping nodes away from an expanded group.
  * Only moves nodes that actually overlap - preserves other positions.
+ * 
+ * This is a soft push - nodes return to their original position when collapsed.
+ * Users can freely drag nodes after they've been pushed.
  */
 export function pushOverlappingNodes(
   allNodes: Node[],
@@ -160,47 +163,54 @@ export function pushOverlappingNodes(
     };
 
     if (rectsOverlap(nodeRect, groupBounds, opts.minSpacing)) {
-      // Calculate push direction - prefer horizontal push
-      const overlapLeft = groupBounds.x + groupBounds.width - node.position.x;
-      const overlapRight = node.position.x + opts.nodeWidth - groupBounds.x;
-      const overlapTop = groupBounds.y + groupBounds.height - node.position.y;
-      const overlapBottom = node.position.y + opts.nodeHeight - groupBounds.y;
+      // Calculate the center of both rects to determine optimal push direction
+      const nodeCenterX = node.position.x + opts.nodeWidth / 2;
+      const nodeCenterY = node.position.y + opts.nodeHeight / 2;
+      const groupCenterX = groupBounds.x + groupBounds.width / 2;
+      const groupCenterY = groupBounds.y + groupBounds.height / 2;
 
-      // Find minimum push distance
-      const pushes = [
-        { dir: "right", dist: overlapLeft + opts.minSpacing },
-        { dir: "left", dist: overlapRight + opts.minSpacing },
-        { dir: "down", dist: overlapTop + opts.minSpacing },
-        { dir: "up", dist: overlapBottom + opts.minSpacing },
-      ].filter((p) => p.dist > 0);
+      // Calculate distances needed to clear the overlap in each direction
+      const clearRight = groupBounds.x + groupBounds.width - node.position.x + opts.minSpacing;
+      const clearLeft = node.position.x + opts.nodeWidth - groupBounds.x + opts.minSpacing;
+      const clearDown = groupBounds.y + groupBounds.height - node.position.y + opts.minSpacing;
+      const clearUp = node.position.y + opts.nodeHeight - groupBounds.y + opts.minSpacing;
 
-      if (pushes.length > 0) {
-        // Prefer horizontal push, then choose minimum distance
-        const horizontalPushes = pushes.filter((p) => p.dir === "left" || p.dir === "right");
-        const bestPush = horizontalPushes.length > 0
-          ? horizontalPushes.reduce((a, b) => (a.dist < b.dist ? a : b))
-          : pushes.reduce((a, b) => (a.dist < b.dist ? a : b));
+      let newX = node.position.x;
+      let newY = node.position.y;
 
-        let newX = node.position.x;
-        let newY = node.position.y;
-
-        switch (bestPush.dir) {
-          case "right":
-            newX = groupBounds.x + groupBounds.width + opts.minSpacing;
-            break;
-          case "left":
-            newX = groupBounds.x - opts.nodeWidth - opts.minSpacing;
-            break;
-          case "down":
-            newY = groupBounds.y + groupBounds.height + opts.minSpacing;
-            break;
-          case "up":
-            newY = groupBounds.y - opts.nodeHeight - opts.minSpacing;
-            break;
+      // Push in the direction the node is already positioned relative to group center
+      // This maintains the general layout topology
+      if (nodeCenterX >= groupCenterX && nodeCenterY >= groupCenterY) {
+        // Node is to the right and below - push right or down
+        if (clearRight < clearDown) {
+          newX = groupBounds.x + groupBounds.width + opts.minSpacing;
+        } else {
+          newY = groupBounds.y + groupBounds.height + opts.minSpacing;
         }
-
-        newPositions.set(node.id, { x: newX, y: newY });
+      } else if (nodeCenterX < groupCenterX && nodeCenterY >= groupCenterY) {
+        // Node is to the left and below - push left or down
+        if (clearLeft < clearDown) {
+          newX = groupBounds.x - opts.nodeWidth - opts.minSpacing;
+        } else {
+          newY = groupBounds.y + groupBounds.height + opts.minSpacing;
+        }
+      } else if (nodeCenterX >= groupCenterX && nodeCenterY < groupCenterY) {
+        // Node is to the right and above - push right or up
+        if (clearRight < clearUp) {
+          newX = groupBounds.x + groupBounds.width + opts.minSpacing;
+        } else {
+          newY = groupBounds.y - opts.nodeHeight - opts.minSpacing;
+        }
+      } else {
+        // Node is to the left and above - push left or up
+        if (clearLeft < clearUp) {
+          newX = groupBounds.x - opts.nodeWidth - opts.minSpacing;
+        } else {
+          newY = groupBounds.y - opts.nodeHeight - opts.minSpacing;
+        }
       }
+
+      newPositions.set(node.id, { x: newX, y: newY });
     }
   }
 
