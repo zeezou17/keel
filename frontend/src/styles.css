@@ -10,14 +10,23 @@
   box-sizing: border-box;
 }
 
-body {
+html,
+body,
+#root {
+  height: 100%;
   margin: 0;
 }
 
+body {
+  overflow: hidden;
+}
+
 .app-shell {
-  min-height: 100vh;
+  height: 100dvh;
+  max-height: 100dvh;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 /* -- Top toolbar: breadcrumbs, git dirty, add node, commit ----------------- */
@@ -70,7 +79,9 @@ body {
 .canvas-panel {
   flex: 1;
   min-height: 0;
+  min-width: 0;
   position: relative;
+  overflow: hidden;
 }
 
 .node-detail-panel {
@@ -84,6 +95,8 @@ body {
   padding: 0.85rem 1rem;
   box-shadow: 0 8px 24px rgba(16, 42, 67, 0.12);
   width: min(420px, calc(100% - 2rem));
+  max-height: calc(100% - 2rem);
+  overflow-y: auto;
 }
 
 .node-detail-header {
@@ -195,6 +208,7 @@ body {
   display: flex;
   flex: 1;
   min-height: 0;
+  overflow: hidden;
 }
 
 /* -- Left sidebar: requirements / ADRs / characteristics ------------------- */
@@ -206,6 +220,7 @@ body {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  overflow: hidden;
 }
 
 .sidebar.collapsed {
@@ -364,6 +379,7 @@ body {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  overflow: hidden;
 }
 
 .spar-panel.collapsed {
