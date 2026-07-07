@@ -411,42 +411,126 @@ export function getSparringContext(
 /**
  * Get the focused context for Add Node operation.
  */
+export interface AddNodeContext {
+  level: number;
+  containerId: string | null;
+  parentId: string | null;
+  focusName: string | null;
+}
+
+export function formatAddNodeLabel(context: AddNodeContext): string {
+  if (context.level <= 1) {
+    return "Add node";
+  }
+  if (context.focusName) {
+    return `Add node (C${context.level} · ${context.focusName})`;
+  }
+  return `Add node (C${context.level})`;
+}
+
+function findNodeName(
+  nodeId: string,
+  c1Architecture: ArchitectureFile | null,
+  c2Architecture: ArchitectureFile | null,
+): string | null {
+  const c1 = c1Architecture?.nodes.find((node) => node.id === nodeId);
+  if (c1) return c1.name;
+  const c2 = c2Architecture?.nodes.find((node) => node.id === nodeId);
+  return c2?.name ?? null;
+}
+
 export function getAddNodeContext(
   state: ExpansionState,
-  selectedNode: KeelNode | null
-): { level: number; containerId: string | null } {
-  // If a node is selected
+  selectedNode: KeelNode | null,
+  c1Architecture: ArchitectureFile | null = null,
+  c2Architecture: ArchitectureFile | null = null,
+): AddNodeContext {
+  // If a node is selected, prefer its context over expanded-set iteration order.
   if (selectedNode) {
-    // If it's a container and expanded, add at C3 level
-    if (selectedNode.type === "container" && state.expandedNodeIds.has(selectedNode.id)) {
-      return { level: 3, containerId: selectedNode.id };
+    if (selectedNode.type === "container") {
+      return {
+        level: 3,
+        containerId: selectedNode.id,
+        parentId: selectedNode.id,
+        focusName: selectedNode.name,
+      };
     }
-    // If it's a system and expanded, add at C2 level
-    if (selectedNode.type === "system" && state.expandedNodeIds.has(selectedNode.id)) {
-      return { level: 2, containerId: null };
+
+    if (selectedNode.type === "system") {
+      if (state.expandedNodeIds.has(selectedNode.id)) {
+        return {
+          level: 2,
+          containerId: null,
+          parentId: selectedNode.id,
+          focusName: selectedNode.name,
+        };
+      }
+      return {
+        level: 1,
+        containerId: null,
+        parentId: null,
+        focusName: selectedNode.name,
+      };
     }
-    // Otherwise add at the same level as selected node
+
+    if (selectedNode.type === "component") {
+      const parentId = selectedNode.parent_id ?? null;
+      return {
+        level: 3,
+        containerId: parentId,
+        parentId,
+        focusName: selectedNode.name,
+      };
+    }
+
     return {
       level: selectedNode.level,
       containerId: selectedNode.level === 3 ? selectedNode.parent_id ?? null : null,
+      parentId: selectedNode.parent_id ?? null,
+      focusName: selectedNode.name,
     };
   }
 
-  // No selection - check for expanded nodes
-  for (const nodeId of state.expandedNodeIds) {
-    const c3Cache = getCachedArchitecture(state, nodeId);
-    if (c3Cache) {
-      return { level: 3, containerId: nodeId };
+  // No selection — use the most recently expanded node (Set preserves insertion order).
+  if (state.expandedNodeIds.size > 0) {
+    const expandedIds = [...state.expandedNodeIds];
+    const lastExpandedId = expandedIds[expandedIds.length - 1];
+
+    const expandedSystem = c1Architecture?.nodes.find(
+      (node) => node.id === lastExpandedId && node.type === "system",
+    );
+    if (expandedSystem) {
+      return {
+        level: 2,
+        containerId: null,
+        parentId: expandedSystem.id,
+        focusName: expandedSystem.name,
+      };
+    }
+
+    const expandedContainer = c2Architecture?.nodes.find(
+      (node) => node.id === lastExpandedId && node.type === "container",
+    );
+    if (expandedContainer) {
+      return {
+        level: 3,
+        containerId: expandedContainer.id,
+        parentId: expandedContainer.id,
+        focusName: expandedContainer.name,
+      };
+    }
+
+    if (getCachedArchitecture(state, lastExpandedId)) {
+      return {
+        level: 3,
+        containerId: lastExpandedId,
+        parentId: lastExpandedId,
+        focusName: findNodeName(lastExpandedId, c1Architecture, c2Architecture),
+      };
     }
   }
 
-  // Check for any expanded systems
-  if (state.expandedNodeIds.size > 0) {
-    return { level: 2, containerId: null };
-  }
-
-  // Default to C1
-  return { level: 1, containerId: null };
+  return { level: 1, containerId: null, parentId: null, focusName: null };
 }
 
 /**

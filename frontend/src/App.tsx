@@ -33,6 +33,7 @@ import {
   getCachedArchitecture,
   composeCanvas,
   getSparringContext,
+  formatAddNodeLabel,
   getAddNodeContext,
   canNodeExpand,
   getChildLevel,
@@ -61,6 +62,48 @@ const DEFAULT_NODE_TYPE: Record<number, NodeType> = {
 
 function slugify(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+}
+
+function defaultNodePosition(
+  level: number,
+  parentId: string | null,
+  targetArchitecture: ArchitectureFile,
+  c1Architecture: ArchitectureFile | null,
+  c2Architecture: ArchitectureFile | null,
+  fallbackIndex: number,
+): { x: number; y: number } {
+  const nodeWidth = 180;
+  const nodeHeight = 80;
+  const spacing = 30;
+
+  let parentNode: KeelNode | undefined;
+  if (level === 2 && parentId) {
+    parentNode = c1Architecture?.nodes.find((node) => node.id === parentId);
+  } else if (level === 3 && parentId) {
+    parentNode = c2Architecture?.nodes.find((node) => node.id === parentId);
+  }
+
+  const siblingCount = targetArchitecture.nodes.filter((node) => {
+    if (level === 2) {
+      return node.parent_id === parentId;
+    }
+    return true;
+  }).length;
+
+  if (parentNode?.position_x != null && parentNode?.position_y != null) {
+    const cols = 3;
+    const col = siblingCount % cols;
+    const row = Math.floor(siblingCount / cols);
+    return {
+      x: parentNode.position_x + col * (nodeWidth + spacing),
+      y: parentNode.position_y + nodeHeight + 50 + row * (nodeHeight + spacing),
+    };
+  }
+
+  return {
+    x: 120 + (fallbackIndex % 5) * 220,
+    y: 100 + Math.floor(fallbackIndex / 5) * 140,
+  };
 }
 
 export default function App() {
@@ -108,10 +151,12 @@ export default function App() {
       return {
         level: fullLevelView.level,
         containerId: fullLevelView.containerId ?? null,
+        parentId: null,
+        focusName: fullLevelView.label,
       };
     }
-    return getAddNodeContext(expansionState, selectedNode);
-  }, [expansionState, selectedNode, fullLevelView]);
+    return getAddNodeContext(expansionState, selectedNode, c1Architecture, c2Architecture);
+  }, [expansionState, selectedNode, fullLevelView, c1Architecture, c2Architecture]);
 
   const nodeEmptyContext = useMemo<NodeEmptyContext>(
     () => ({
@@ -330,7 +375,7 @@ export default function App() {
 
   // -- Add node at focused context --------------------------------------------
   const handleAddNode = useCallback(async () => {
-    const { level, containerId } = addNodeContext;
+    const { level, containerId, parentId } = addNodeContext;
     
     // Determine which architecture to update
     let targetArchitecture: ArchitectureFile | null = null;
@@ -355,6 +400,14 @@ export default function App() {
     const index = targetArchitecture.nodes.length + 1;
     const nodeType = DEFAULT_NODE_TYPE[level] ?? "component";
     const name = `New ${nodeType} ${index}`;
+    const position = defaultNodePosition(
+      level,
+      parentId,
+      targetArchitecture,
+      c1Architecture,
+      c2Architecture,
+      index,
+    );
     const node: KeelNode = {
       id: `node_${slugify(name)}`,
       type: nodeType,
@@ -362,9 +415,9 @@ export default function App() {
       name,
       description: "Describe this element.",
       paths: [],
-      parent_id: level === 3 ? containerId ?? null : null,
-      position_x: 120 + (index % 5) * 220,
-      position_y: 100 + Math.floor(index / 5) * 140,
+      parent_id: level === 3 ? parentId ?? containerId ?? null : level === 2 ? parentId : null,
+      position_x: position.x,
+      position_y: position.y,
     };
 
     const updated = await createNode(level, node, containerId);
@@ -551,7 +604,7 @@ export default function App() {
             </button>
           )}
           <button onClick={() => void handleAddNode()}>
-            Add node {addNodeContext.level > 1 ? `(C${addNodeContext.level})` : ""}
+            {formatAddNodeLabel(addNodeContext)}
           </button>
           <button onClick={() => void handleCommit()} disabled={!dirty}>
             Commit
