@@ -34,16 +34,16 @@ Living index of Keel capabilities — what is shipped, what was enhanced after t
 | FP-003 | [Selective drill-down](planned-selective-drill-down.md) | Done | Expand one branch in place; keep sibling nodes visible; multi-expand + collapse |
 | FP-004 | [UML and multi-viewpoint diagrams](planned-uml-and-multi-viewpoint-diagrams.md) | Backlog | UML (class, sequence, …) and other notations beyond C4; research phase first |
 | FP-005 | [UI theme and color palette refresh](planned-ui-theme-refresh.md) | Backlog | Visual refresh of colors, typography, and component styling after core UX features ship |
-| FP-006 | [Fix add-node targeting and parent linking](planned-fix-add-node-targeting.md) | Backlog | Add node creates nodes at wrong level/parent; spurious links to containers |
+| FP-006 | [Fix add-node targeting and parent linking](planned-fix-add-node-targeting.md) | Done | Add node creates nodes at correct level/parent; toolbar shows focus |
 | FP-007 | [Fix “View all C2” escape hatch](planned-fix-view-all-c2.md) | Backlog | Overview mode feels like collapse; expansion state lost on exit |
 | FP-008 | [Delete node from the UI](planned-fix-delete-node.md) | Done | Delete from node detail panel; empty nodes delete immediately, others confirm |
-| FP-009 | [Fix drag-and-drop position persistence](planned-fix-position-persistence.md) | Backlog | Dragged node positions reset on reload, re-expand, or overview mode |
+| FP-009 | [Fix drag-and-drop position persistence](planned-fix-position-persistence.md) | Done | Dragged positions survive reload, re-expand, and overview mode |
 | FP-010 | [Docker image and GitHub Actions CI](planned-docker-and-ci.md) | Backlog | No Dockerfile or project CI; pytest/vitest not run on PRs |
 | FP-011 | [Cross-platform support (beyond Ubuntu)](planned-cross-platform-support.md) | Backlog | macOS/Windows untested; bash-only build scripts; path/git edge cases |
 | FP-012 | [Undo and redo](planned-undo-redo.md) | Backlog | Reverse canvas edits (delete, add, move, edit) in the current session |
 | FP-013 | [Manual node linking (edges with text)](planned-manual-node-linking.md) | Backlog | Draw links between nodes; label relationships manually on the canvas |
-| FP-014 | [Node detail panel stale error state](planned-fix-node-detail-stale-state.md) | Backlog | Work package error persists when selecting a different node |
-| FP-015 | [Fixed viewport layout (chat growth)](planned-fix-viewport-layout-overflow.md) | Backlog | Long chat expands page height; detail panel and controls pushed off-screen |
+| FP-014 | [Node detail panel stale error/success state](planned-fix-node-detail-stale-state.md) | Done | Work package error clears when selecting a different node |
+| FP-015 | [Fixed viewport layout (chat growth)](planned-fix-viewport-layout-overflow.md) | Done | Long chat scrolls inside spar panel; detail panel stays reachable |
 | FP-016 | [GitHub Pages documentation site](planned-github-pages-docs.md) | Backlog | User guide on GitHub Pages — install, UI tour, drift, how to use Keel |
 
 ## How to use this folder
