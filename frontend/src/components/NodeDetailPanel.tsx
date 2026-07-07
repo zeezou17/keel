@@ -5,7 +5,7 @@
  * FP-003: Replaced "Drill down" with Expand/Collapse for selective drill-down.
  * FP-008: Delete node — empty nodes delete immediately; others require confirmation.
  */
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { generateWorkPackage, type KeelNode } from "../api/client";
 import type { NodeEmptyContext } from "../canvas/nodeEmpty";
@@ -42,6 +42,15 @@ export function NodeDetailPanel({
   const [deleting, setDeleting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const nodeIdRef = useRef<string | null>(node?.id ?? null);
+
+  useEffect(() => {
+    nodeIdRef.current = node?.id ?? null;
+    setError(null);
+    setMessage(null);
+    setLoading(false);
+    setDeleting(false);
+  }, [node?.id]);
 
   const empty = useMemo(
     () => (node ? isNodeEmpty(node, emptyContext) : true),
@@ -62,17 +71,22 @@ export function NodeDetailPanel({
       return;
     }
 
+    const requestNodeId = node.id;
     setLoading(true);
     setError(null);
     setMessage(null);
     try {
-      const result = await generateWorkPackage(node.id, linkedRequirements);
+      const result = await generateWorkPackage(requestNodeId, linkedRequirements);
+      if (nodeIdRef.current !== requestNodeId) return;
       setMessage(`Created ${result.work_package.id} at ${result.path}`);
       onGenerated();
     } catch (err) {
+      if (nodeIdRef.current !== requestNodeId) return;
       setError(err instanceof Error ? err.message : "Work package generation failed.");
     } finally {
-      setLoading(false);
+      if (nodeIdRef.current === requestNodeId) {
+        setLoading(false);
+      }
     }
   };
 
@@ -97,15 +111,19 @@ export function NodeDetailPanel({
       }
     }
 
+    const requestNodeId = node.id;
     setDeleting(true);
     setError(null);
     setMessage(null);
     try {
       await onDelete(node);
     } catch (err) {
+      if (nodeIdRef.current !== requestNodeId) return;
       setError(err instanceof Error ? err.message : "Failed to delete node.");
     } finally {
-      setDeleting(false);
+      if (nodeIdRef.current === requestNodeId) {
+        setDeleting(false);
+      }
     }
   };
 
