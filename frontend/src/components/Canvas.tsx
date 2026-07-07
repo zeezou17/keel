@@ -308,6 +308,10 @@ function CanvasInner({
 
       updatedNodes = rebuildGroupFrames(updatedNodes, currentExpanded);
 
+      if (onPersistPositions) {
+        onPersistPositions(updatedNodes);
+      }
+
       // Collapse removes nodes immediately — animation would leave stale frames visible.
       if (newlyCollapsed.length > 0 && newlyExpanded.length === 0) {
         nodesRef.current = updatedNodes;
@@ -320,6 +324,9 @@ function CanvasInner({
       animateToPositions(nodes, updatedNodes, token, () => {
         if (token !== animationTokenRef.current) return;
         setNodes(updatedNodes);
+        if (onPersistPositions) {
+          onPersistPositions(updatedNodes);
+        }
         setTimeout(() => fitView({ padding: 0.2, duration: 200 }), 50);
       });
 
@@ -333,7 +340,7 @@ function CanvasInner({
         return rebuildGroupFrames(merged, currentExpanded);
       });
     }
-  }, [buildNodes, expansionState?.expandedNodeIds, isInitialized, fitView, cancelAnimation]);
+  }, [buildNodes, expansionState?.expandedNodeIds, isInitialized, fitView, cancelAnimation, onPersistPositions]);
 
   const animateToPositions = (
     fromNodes: Node[],

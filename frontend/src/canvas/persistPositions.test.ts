@@ -102,21 +102,19 @@ describe("buildPositionPersistRequests", () => {
     expect(c3?.architecture.nodes[0].position_x).toBe(500);
   });
 
-  it("ignores synthetic group nodes", () => {
+  it("persists C2 positions when dragging in full-level overview mode", () => {
     const state = createExpansionState();
     const flowNodes = [
-      {
-        id: "group-sys_1",
-        type: "default",
-        position: { x: 0, y: 0 },
-        data: { label: "" },
-      },
-      flowNode("sys_1", { x: 210, y: 160 }, { raw: c1.nodes[0], parentGroupId: null }),
+      flowNode("ctr_a", { x: 880, y: 420 }, {
+        raw: c2.nodes[0],
+        parentGroupId: null,
+      }),
     ];
 
     const requests = buildPositionPersistRequests(flowNodes, c1, c2, state);
 
     expect(requests).toHaveLength(1);
-    expect(requests[0].level).toBe(1);
+    expect(requests[0].level).toBe(2);
+    expect(requests[0].architecture.nodes[0].position_x).toBe(880);
   });
 });

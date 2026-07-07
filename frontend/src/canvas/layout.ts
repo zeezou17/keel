@@ -78,11 +78,20 @@ export function calculateGroupBounds(
   };
 }
 
+function hasSavedPosition(child: Node): boolean {
+  const raw = (child.data as { raw?: { position_x?: number | null; position_y?: number | null } }).raw;
+  if (raw?.position_x != null && raw?.position_y != null) {
+    return raw.position_x !== 0 || raw.position_y !== 0;
+  }
+  return child.position.x !== 0 || child.position.y !== 0;
+}
+
 /**
  * Position children inside an expanded group in a grid layout.
  * Returns new positions for children only.
- * 
- * Children are positioned relative to their parent, below it in a grid.
+ *
+ * Children with saved architecture coordinates keep their positions;
+ * only nodes without saved coords are auto-laid out in a grid.
  */
 export function layoutChildrenInGroup(
   parentNode: Node,
@@ -96,23 +105,32 @@ export function layoutChildrenInGroup(
     return positions;
   }
 
-  const cols = Math.min(3, Math.ceil(Math.sqrt(childNodes.length)));
+  const unsavedChildren = childNodes.filter((child) => !hasSavedPosition(child));
+  const cols = Math.min(3, Math.ceil(Math.sqrt(Math.max(unsavedChildren.length, 1))));
 
-  // Group starts below the parent
   const groupX = parentNode.position.x;
-  const groupStartY = parentNode.position.y + opts.nodeHeight + 50; // 50 = gap + header
+  const groupStartY = parentNode.position.y + opts.nodeHeight + 50;
 
-  childNodes.forEach((child, index) => {
-    const col = index % cols;
-    const row = Math.floor(index / cols);
+  let autoLayoutIndex = 0;
+  for (const child of childNodes) {
+    if (hasSavedPosition(child)) {
+      const raw = (child.data as { raw?: { position_x?: number; position_y?: number } }).raw;
+      positions.set(child.id, {
+        x: raw?.position_x ?? child.position.x,
+        y: raw?.position_y ?? child.position.y,
+      });
+      continue;
+    }
 
-    // Always lay out under the parent on expand. Saved C2 positions are for the
-    // full-level view and cause children to appear scattered or stranded.
+    const col = autoLayoutIndex % cols;
+    const row = Math.floor(autoLayoutIndex / cols);
+    autoLayoutIndex += 1;
+
     positions.set(child.id, {
       x: groupX + col * (opts.nodeWidth + opts.minSpacing),
       y: groupStartY + row * (opts.nodeHeight + opts.minSpacing),
     });
-  });
+  }
 
   return positions;
 }

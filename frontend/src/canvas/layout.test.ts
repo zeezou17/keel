@@ -12,20 +12,35 @@ function flowNode(
 }
 
 describe("layoutChildrenInGroup", () => {
-  it("lays out every child in a grid below the parent", () => {
+  it("lays out children without saved positions in a grid below the parent", () => {
     const parent = flowNode("sys_1", { x: 400, y: 200 });
     const children = [
       flowNode("c1", { x: 0, y: 0 }, { parentGroupId: "sys_1" }),
-      flowNode("c2", { x: 50, y: 40 }, { parentGroupId: "sys_1" }),
-      flowNode("c3", { x: 900, y: 900 }, { parentGroupId: "sys_1" }),
+      flowNode("c2", { x: 0, y: 0 }, { parentGroupId: "sys_1" }),
+      flowNode("c3", { x: 0, y: 0 }, { parentGroupId: "sys_1" }),
     ];
 
     const positions = layoutChildrenInGroup(parent, children);
 
     expect(positions.get("c1")).toEqual({ x: 400, y: 330 });
     expect(positions.get("c2")).toEqual({ x: 610, y: 330 });
-    // 3 children → 2 columns, third child wraps to row 2
     expect(positions.get("c3")).toEqual({ x: 400, y: 440 });
+  });
+
+  it("preserves saved architecture coordinates on re-expand", () => {
+    const parent = flowNode("sys_1", { x: 400, y: 200 });
+    const children = [
+      flowNode("c1", { x: 0, y: 0 }, {
+        parentGroupId: "sys_1",
+        raw: { position_x: 520, position_y: 360 },
+      }),
+      flowNode("c2", { x: 0, y: 0 }, { parentGroupId: "sys_1" }),
+    ];
+
+    const positions = layoutChildrenInGroup(parent, children);
+
+    expect(positions.get("c1")).toEqual({ x: 520, y: 360 });
+    expect(positions.get("c2")).toEqual({ x: 400, y: 330 });
   });
 
   it("uses three columns for nine children", () => {

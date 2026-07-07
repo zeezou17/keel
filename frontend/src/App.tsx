@@ -627,7 +627,7 @@ export default function App() {
             highlightedNodeIds={highlightedNodeIds}
             selectedNodeId={selectedNode?.id ?? null}
             onArchitectureChange={(next, level, containerId) => void persistArchitecture(next, level, containerId)}
-            onPersistPositions={fullLevelView ? undefined : handlePersistPositions}
+            onPersistPositions={handlePersistPositions}
             onNodeSelect={(node) => setSelectedNode(node)}
             onNodeExpand={(node) => void handleNodeExpand(node)}
             onNodeCollapse={handleNodeCollapse}
