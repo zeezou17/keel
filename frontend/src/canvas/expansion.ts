@@ -41,6 +41,14 @@ export function createExpansionState(): ExpansionState {
   };
 }
 
+/** Deep-clone expansion state for overview mode snapshot/restore (FP-007). */
+export function cloneExpansionState(state: ExpansionState): ExpansionState {
+  return {
+    expandedNodeIds: new Set(state.expandedNodeIds),
+    childArchitectureCache: new Map(state.childArchitectureCache),
+  };
+}
+
 export function loadExpansionState(): ExpansionState {
   // On page refresh, start fresh with no expanded nodes.
   // The child architecture cache is not persisted, so restoring expanded IDs
