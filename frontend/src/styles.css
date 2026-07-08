@@ -74,6 +74,14 @@ body {
   padding: 0.5rem 1rem;
 }
 
+.overview-banner {
+  background: #e0f2f1;
+  color: #234e52;
+  border-bottom: 1px solid #b2dfdb;
+  padding: 0.55rem 1rem;
+  font-size: 0.9rem;
+}
+
 /* -- Center: React Flow canvas and node detail overlay ----------------------- */
 
 .canvas-panel {
@@ -87,7 +95,7 @@ body {
 .node-detail-panel {
   position: absolute;
   right: 1rem;
-  bottom: 1rem;
+  top: 1rem;
   z-index: 30;
   background: rgba(255, 255, 255, 0.96);
   border: 1px solid #d9e2ec;
@@ -119,6 +127,43 @@ body {
 .node-detail-meta {
   color: #486581;
   font-size: 0.85rem;
+}
+
+.node-detail-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-bottom: 0.75rem;
+  font-size: 0.85rem;
+}
+
+.node-detail-field span {
+  font-weight: 600;
+  color: #334e68;
+}
+
+.node-detail-field input,
+.node-detail-field textarea {
+  border: 1px solid #d9e2ec;
+  border-radius: 6px;
+  padding: 0.45rem 0.55rem;
+  font: inherit;
+  resize: vertical;
+}
+
+.edge-detail-panel {
+  position: absolute;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 30;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid #d9e2ec;
+  border-radius: 10px;
+  padding: 0.85rem 1rem;
+  box-shadow: 0 8px 24px rgba(16, 42, 67, 0.12);
+  width: min(360px, calc(100% - 2rem));
+  max-height: calc(100% - 2rem);
+  overflow-y: auto;
 }
 
 .node-detail-section {
@@ -211,10 +256,47 @@ body {
   overflow: hidden;
 }
 
+.workspace-panel {
+  display: flex;
+  flex-shrink: 0;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.workspace-panel .sidebar,
+.workspace-panel .spar-panel {
+  width: 100%;
+}
+
+.resize-handle {
+  flex: 0 0 6px;
+  cursor: col-resize;
+  background: transparent;
+  position: relative;
+  touch-action: none;
+}
+
+.resize-handle::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 2px;
+  width: 2px;
+  background: #d9e2ec;
+  transition: background 0.15s ease;
+}
+
+.resize-handle:hover::after,
+.resize-handle:active::after {
+  background: #829ab1;
+}
+
 /* -- Left sidebar: requirements / ADRs / characteristics ------------------- */
 
 .sidebar {
-  width: 320px;
+  width: 100%;
   border-right: 1px solid #d9e2ec;
   background: #ffffff;
   display: flex;
@@ -373,7 +455,7 @@ body {
 /* -- Right panel: AI sparring chat ----------------------------------------- */
 
 .spar-panel {
-  width: 400px;
+  width: 100%;
   border-left: 1px solid #d9e2ec;
   background: #ffffff;
   display: flex;

@@ -12,23 +12,26 @@ import { RequirementsPanel } from "./RequirementsPanel";
 type SidebarTab = "requirements" | "adrs" | "characteristics";
 
 interface SidebarProps {
+  collapsed: boolean;
+  onToggleCollapsed: () => void;
   onRequirementSelect: (requirement: Requirement | null, highlightedNodeIds: string[]) => void;
   selectedRequirementId: string | null;
   onArchitectureRefresh: () => void;
 }
 
 export function Sidebar({
+  collapsed,
+  onToggleCollapsed,
   onRequirementSelect,
   selectedRequirementId,
   onArchitectureRefresh,
 }: SidebarProps) {
   const [tab, setTab] = useState<SidebarTab>("requirements");
-  const [collapsed, setCollapsed] = useState(false);
 
   if (collapsed) {
     return (
       <aside className="sidebar collapsed">
-        <button onClick={() => setCollapsed(false)}>Docs</button>
+        <button onClick={onToggleCollapsed}>Docs</button>
       </aside>
     );
   }
@@ -50,7 +53,7 @@ export function Sidebar({
             Characteristics
           </button>
         </div>
-        <button onClick={() => setCollapsed(true)}>Collapse</button>
+        <button onClick={onToggleCollapsed}>Collapse</button>
       </div>
       {tab === "requirements" ? (
         <RequirementsPanel
