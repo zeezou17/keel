@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { ArchitectureFile } from "../api/client";
 import {
   cacheChildArchitecture,
+  cloneExpansionState,
   createExpansionState,
   expandNode,
   formatAddNodeLabel,
@@ -204,5 +205,29 @@ describe("getSystemContainers", () => {
 
     expect(getSystemContainers("sys_b", mixedC2, c1).map((node) => node.id)).toEqual(["ctr_new"]);
     expect(getSystemContainers("sys_a", mixedC2, c1).map((node) => node.id)).toEqual(["ctr_legacy"]);
+  });
+});
+
+describe("cloneExpansionState", () => {
+  it("copies expanded ids and child architecture cache independently", () => {
+    const c3: ArchitectureFile = {
+      schema_version: 1,
+      level: 3,
+      container_id: "ctr_a",
+      nodes: [],
+      edges: [],
+    };
+
+    const state = cacheChildArchitecture(expandNode(createExpansionState(), "sys_a"), "ctr_a", c3);
+    const clone = cloneExpansionState(state);
+
+    expect(clone.expandedNodeIds).toEqual(state.expandedNodeIds);
+    expect(clone.childArchitectureCache.get("ctr_a")).toBe(c3);
+
+    clone.expandedNodeIds.delete("sys_a");
+    clone.childArchitectureCache.clear();
+
+    expect(state.expandedNodeIds.has("sys_a")).toBe(true);
+    expect(state.childArchitectureCache.size).toBe(1);
   });
 });

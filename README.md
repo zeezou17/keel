@@ -157,13 +157,16 @@ keel dev --path /path/to/repo
 
 ### Architecture canvas
 
-- **Navigate C4 levels** — Click a node to select it and open the detail panel. Use **Expand** / **Collapse** (chevron or detail panel) to show containers or components inside a system without leaving the parent view. Use **Collapse all** or the **C1 Context** breadcrumb to reset. **View all C2** switches to a classic full-level diagram when you need an overview.
+- **Navigate C4 levels** — Click a node to select it and open the detail panel. Use **Expand** / **Collapse** (chevron or detail panel) to show containers or components inside a system without leaving the parent view. Use **Collapse all** or the **C1 Context** breadcrumb to reset. **Overview: all C2** switches to a classic full-level diagram when you need an overview (your expansions are restored when you return).
 - **Add nodes** — Use **Add node** in the toolbar. New nodes are created at the focused context (root level or inside an expanded branch).
+- **Edit nodes** — Select a node to edit name, description, technology, and path globs in the detail panel, then click **Save**.
 - **Delete nodes** — Select a node to open the detail panel, then click **Delete**. Empty nodes (no edges, children, linked docs, or path globs) are removed immediately; nodes with attachments ask for confirmation first.
+- **Draw links** — Drag from one node handle to another to add a labeled relationship. Click an edge to edit its label or delete it.
 - **Move nodes** — Drag nodes on the canvas; positions are saved automatically.
+- **Resize panels** — Drag the inner edge of the docs sidebar or sparring panel to resize; double-click the handle to reset.
 - **Commit** — Changes are written to `.keel/` immediately. When the toolbar shows **Uncommitted changes**, click **Commit** to create a git commit.
 
-Node field editing (name, description, path globs) and manual edge drawing are on the roadmap — see [features/README.md](features/README.md).
+Manual bulk edge editing beyond draw/select is still limited — see [features/README.md](features/README.md) for roadmap items.
 
 ### Sidebar: Requirements, ADRs, Characteristics
 

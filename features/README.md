@@ -29,13 +29,13 @@ Living index of Keel capabilities — what is shipped, what was enhanced after t
 
 | ID | Feature | Status | Detail |
 |----|---------|--------|--------|
-| FP-001 | [Resizable sidebars](planned-resizable-sidebars.md) | Planned | Drag-to-resize left docs panel and right sparring panel |
-| FP-002 | [Canvas manual editing](planned-canvas-manual-editing.md) | Planned | Edit/delete nodes and add edges manually on the diagram |
+| FP-001 | [Resizable sidebars](planned-resizable-sidebars.md) | Done | Drag-to-resize left docs panel and right sparring panel |
+| FP-002 | [Canvas manual editing](planned-canvas-manual-editing.md) | Done | Edit node fields, draw/edit/delete edges from the UI |
 | FP-003 | [Selective drill-down](planned-selective-drill-down.md) | Done | Expand one branch in place; keep sibling nodes visible; multi-expand + collapse |
 | FP-004 | [UML and multi-viewpoint diagrams](planned-uml-and-multi-viewpoint-diagrams.md) | Backlog | UML (class, sequence, …) and other notations beyond C4; research phase first |
 | FP-005 | [UI theme and color palette refresh](planned-ui-theme-refresh.md) | Backlog | Visual refresh of colors, typography, and component styling after core UX features ship |
 | FP-006 | [Fix add-node targeting and parent linking](planned-fix-add-node-targeting.md) | Done | Add node creates nodes at correct level/parent; toolbar shows focus |
-| FP-007 | [Fix “View all C2” escape hatch](planned-fix-view-all-c2.md) | Backlog | Overview mode feels like collapse; expansion state lost on exit |
+| FP-007 | [Fix “View all C2” escape hatch](planned-fix-view-all-c2.md) | Done | Overview mode preserves expansions; clear banner and breadcrumbs |
 | FP-008 | [Delete node from the UI](planned-fix-delete-node.md) | Done | Delete from node detail panel; empty nodes delete immediately, others confirm |
 | FP-009 | [Fix drag-and-drop position persistence](planned-fix-position-persistence.md) | Done | Dragged positions survive reload, re-expand, and overview mode |
 | FP-010 | [Docker image and GitHub Actions CI](planned-docker-and-ci.md) | Backlog | No Dockerfile or project CI; pytest/vitest not run on PRs |

@@ -6,7 +6,7 @@
  *
  * FP-003: Selective drill-down replaces full level switching with expand-in-place.
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Node } from "@xyflow/react";
 
 import {
@@ -16,7 +16,9 @@ import {
   fetchArchitecture,
   fetchGitStatus,
   saveArchitecture,
+  updateNode,
   type ArchitectureFile,
+  type KeelEdge,
   type KeelNode,
   type NodeType,
   type Requirement,
@@ -28,6 +30,7 @@ import {
   toggleExpansion,
   collapseAll,
   collapseSubtree,
+  cloneExpansionState,
   expandMultiple,
   cacheChildArchitecture,
   getCachedArchitecture,
@@ -43,12 +46,26 @@ import {
   getLegacyOrphanContainersForSystem,
 } from "./canvas/expansion";
 import { buildPositionPersistRequests } from "./canvas/persistPositions";
-import { buildEdgePersistRequest } from "./canvas/edgePersist";
+import {
+  buildEdgeDeleteRequest,
+  buildEdgePersistRequest,
+  buildEdgeUpdateRequest,
+  locateEdge,
+} from "./canvas/edgePersist";
 import type { NodeEmptyContext } from "./canvas/nodeEmpty";
 import { Canvas } from "./components/Canvas";
+import { EdgeDetailPanel } from "./components/EdgeDetailPanel";
 import { NodeDetailPanel } from "./components/NodeDetailPanel";
+import { ResizeHandle } from "./components/ResizeHandle";
 import { Sidebar } from "./components/Sidebar";
 import { SparringPanel } from "./components/SparringPanel";
+import {
+  clampPanelWidth,
+  DEFAULT_SIDEBAR_WIDTH,
+  DEFAULT_SPAR_WIDTH,
+  loadLayoutWidths,
+  saveLayoutWidths,
+} from "./layout/storage";
 
 type ViewState = {
   level: number;
@@ -119,13 +136,47 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [sparCollapsed, setSparCollapsed] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(() => loadLayoutWidths().sidebar);
+  const [sparWidth, setSparWidth] = useState(() => loadLayoutWidths().spar);
   const [selectedRequirementId, setSelectedRequirementId] = useState<string | null>(null);
   const [highlightedNodeIds, setHighlightedNodeIds] = useState<string[]>([]);
   const [selectedNode, setSelectedNode] = useState<KeelNode | null>(null);
+  const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
 
   // -- Legacy view state for "View all C2/C3" escape hatch --------------------
   const [fullLevelView, setFullLevelView] = useState<ViewState | null>(null);
   const [fullLevelArchitecture, setFullLevelArchitecture] = useState<ArchitectureFile | null>(null);
+  const expansionSnapshotRef = useRef<ExpansionState | null>(null);
+
+  const exitOverviewMode = useCallback(() => {
+    setFullLevelView(null);
+    setFullLevelArchitecture(null);
+    if (expansionSnapshotRef.current) {
+      setExpansionState(cloneExpansionState(expansionSnapshotRef.current));
+      expansionSnapshotRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    saveLayoutWidths({ sidebar: sidebarWidth, spar: sparWidth });
+  }, [sidebarWidth, sparWidth]);
+
+  const handleSidebarResize = useCallback((deltaX: number) => {
+    setSidebarWidth((current) => clampPanelWidth(current + deltaX));
+  }, []);
+
+  const handleSparResize = useCallback((deltaX: number) => {
+    setSparWidth((current) => clampPanelWidth(current + deltaX));
+  }, []);
+
+  const resetSidebarWidth = useCallback(() => {
+    setSidebarWidth(DEFAULT_SIDEBAR_WIDTH);
+  }, []);
+
+  const resetSparWidth = useCallback(() => {
+    setSparWidth(DEFAULT_SPAR_WIDTH);
+  }, []);
 
   // -- Persist expansion state to localStorage --------------------------------
   useEffect(() => {
@@ -175,9 +226,9 @@ export default function App() {
       {
         label: "C1 Context",
         action: () => {
-          setFullLevelView(null);
-          setFullLevelArchitecture(null);
-          setExpansionState((prev) => collapseAll(prev));
+          if (fullLevelView) {
+            exitOverviewMode();
+          }
         },
       },
     ];
@@ -185,11 +236,8 @@ export default function App() {
     if (fullLevelView) {
       if (fullLevelView.level >= 2) {
         items.push({
-          label: "View all C2",
-          action: () => {
-            setFullLevelView({ level: 2, label: "C2 Containers" });
-            void loadFullLevel(2);
-          },
+          label: fullLevelView.label ?? "All C2 containers",
+          action: () => {},
         });
       }
       if (fullLevelView.level >= 3 && fullLevelView.containerId) {
@@ -201,7 +249,7 @@ export default function App() {
     }
 
     return items;
-  }, [fullLevelView, expansionState]);
+  }, [fullLevelView, exitOverviewMode]);
 
   // -- Load architecture ------------------------------------------------------
   const loadInitialArchitecture = useCallback(async () => {
@@ -378,6 +426,8 @@ export default function App() {
 
       const { level, architecture, containerId } = result.request;
       void persistArchitecture(architecture, level, containerId);
+      setSelectedEdgeId(result.request.edge.id);
+      setSelectedNode(null);
     },
     [
       c1Architecture,
@@ -389,8 +439,101 @@ export default function App() {
     ],
   );
 
+  const applyArchitectureUpdate = useCallback(
+    (updated: ArchitectureFile) => {
+      if (updated.level === 1) {
+        setC1Architecture(updated);
+      } else if (updated.level === 2) {
+        setC2Architecture(updated);
+      } else if (updated.level === 3 && updated.container_id) {
+        setExpansionState((prev) => cacheChildArchitecture(prev, updated.container_id!, updated));
+      }
+
+      if (fullLevelView?.level === updated.level) {
+        setFullLevelArchitecture(updated);
+      }
+    },
+    [fullLevelView],
+  );
+
+  const handleNodeSave = useCallback(
+    async (node: KeelNode) => {
+      const updated = await updateNode(node.id, node);
+      applyArchitectureUpdate(updated);
+
+      const savedNode = updated.nodes.find((item) => item.id === node.id);
+      if (savedNode) {
+        setSelectedNode(savedNode);
+      }
+
+      await refreshGitStatus();
+    },
+    [applyArchitectureUpdate, refreshGitStatus],
+  );
+
+  const handleEdgeSave = useCallback(
+    async (edge: KeelEdge, label: string) => {
+      if (!c1Architecture) return;
+
+      const result = buildEdgeUpdateRequest(
+        edge.id,
+        label,
+        c1Architecture,
+        c2Architecture,
+        expansionState,
+        fullLevelArchitecture,
+      );
+
+      if (!result.ok) {
+        throw new Error(result.error);
+      }
+
+      const { level, architecture, containerId } = result.request;
+      await persistArchitecture(architecture, level, containerId);
+      setSelectedEdgeId(result.request.edge.id);
+    },
+    [c1Architecture, c2Architecture, expansionState, fullLevelArchitecture, persistArchitecture],
+  );
+
+  const handleEdgeDelete = useCallback(
+    async (edge: KeelEdge) => {
+      if (!c1Architecture) return;
+
+      const result = buildEdgeDeleteRequest(
+        edge.id,
+        c1Architecture,
+        c2Architecture,
+        expansionState,
+        fullLevelArchitecture,
+      );
+
+      if (!result.ok) {
+        throw new Error(result.error);
+      }
+
+      const { level, architecture, containerId } = result.request;
+      await persistArchitecture(architecture, level, containerId);
+      setSelectedEdgeId(null);
+    },
+    [c1Architecture, c2Architecture, expansionState, fullLevelArchitecture, persistArchitecture],
+  );
+
+  const selectedEdge = useMemo(() => {
+    if (!selectedEdgeId || !c1Architecture) {
+      return null;
+    }
+    return locateEdge(
+      selectedEdgeId,
+      c1Architecture,
+      c2Architecture,
+      expansionState,
+      fullLevelArchitecture,
+    )?.edge ?? null;
+  }, [selectedEdgeId, c1Architecture, c2Architecture, expansionState, fullLevelArchitecture]);
+
   const handleCollapseAll = useCallback(() => {
     setExpansionState((prev) => collapseAll(prev));
+    expansionSnapshotRef.current = null;
     setFullLevelView(null);
     setFullLevelArchitecture(null);
   }, []);
@@ -398,14 +541,17 @@ export default function App() {
   // -- Escape hatch: View full level ------------------------------------------
   const handleViewFullLevel = useCallback(
     async (level: number, containerId?: string | null, label?: string) => {
+      expansionSnapshotRef.current = cloneExpansionState(expansionState);
       setFullLevelView({
         level,
         containerId,
         label: label ?? `C${level}`,
       });
+      setSelectedNode(null);
+      setSelectedEdgeId(null);
       await loadFullLevel(level, containerId);
     },
-    [loadFullLevel],
+    [loadFullLevel, expansionState],
   );
 
   // -- Add node at focused context --------------------------------------------
@@ -653,10 +799,10 @@ export default function App() {
           {!fullLevelView && (
             <button
               className="breadcrumb"
-              onClick={() => void handleViewFullLevel(2, null, "C2 Containers")}
-              title="View all C2 containers (classic C4 view)"
+              onClick={() => void handleViewFullLevel(2, null, "All C2 containers")}
+              title="Switch to a classic full C2 diagram for scanning every container at once"
             >
-              View all C2
+              Overview: all C2
             </button>
           )}
           <button onClick={() => void handleAddNode()}>
@@ -668,12 +814,33 @@ export default function App() {
         </div>
       </header>
       {error ? <div className="error-banner">{error}</div> : null}
+      {fullLevelView ? (
+        <div className="overview-banner" role="status">
+          Overview mode: {fullLevelView.label ?? `all C${fullLevelView.level} containers`}.
+          {" "}Use <strong>C1 Context</strong> to return to expand-in-place view — your expansions will be restored.
+        </div>
+      ) : null}
       <div className="workspace">
-        <Sidebar
-          selectedRequirementId={selectedRequirementId}
-          onRequirementSelect={handleRequirementSelect}
-          onArchitectureRefresh={() => void reloadArchitecture()}
-        />
+        <div
+          className="workspace-panel workspace-panel-left"
+          style={{ width: sidebarCollapsed ? "auto" : sidebarWidth }}
+        >
+          <Sidebar
+            collapsed={sidebarCollapsed}
+            onToggleCollapsed={() => setSidebarCollapsed((value) => !value)}
+            selectedRequirementId={selectedRequirementId}
+            onRequirementSelect={handleRequirementSelect}
+            onArchitectureRefresh={() => void reloadArchitecture()}
+          />
+        </div>
+        {!sidebarCollapsed ? (
+          <ResizeHandle
+            side="left"
+            ariaLabel="Resize docs sidebar"
+            onResize={handleSidebarResize}
+            onReset={resetSidebarWidth}
+          />
+        ) : null}
         <main className="canvas-panel">
           <Canvas
             architecture={displayArchitecture}
@@ -682,10 +849,17 @@ export default function App() {
             expansionState={expansionState}
             highlightedNodeIds={highlightedNodeIds}
             selectedNodeId={selectedNode?.id ?? null}
+            selectedEdgeId={selectedEdgeId}
             onArchitectureChange={(next, level, containerId) => void persistArchitecture(next, level, containerId)}
             onPersistPositions={handlePersistPositions}
             onEdgeCreate={handleEdgeCreate}
-            onNodeSelect={(node) => setSelectedNode(node)}
+            onEdgeSelect={(edge) => setSelectedEdgeId(edge?.id ?? null)}
+            onNodeSelect={(node) => {
+              setSelectedNode(node);
+              if (node) {
+                setSelectedEdgeId(null);
+              }
+            }}
             onNodeExpand={(node) => void handleNodeExpand(node)}
             onNodeCollapse={handleNodeCollapse}
             onNodeDoubleClick={() => {}}
@@ -697,18 +871,38 @@ export default function App() {
             emptyContext={nodeEmptyContext}
             onExpand={(node) => void handleNodeExpand(node)}
             onCollapse={handleNodeCollapse}
+            onSave={handleNodeSave}
             onDelete={handleDeleteNode}
             onClose={() => setSelectedNode(null)}
             onGenerated={() => void refreshGitStatus()}
           />
+          <EdgeDetailPanel
+            edge={selectedEdge}
+            onSave={handleEdgeSave}
+            onDelete={handleEdgeDelete}
+            onClose={() => setSelectedEdgeId(null)}
+          />
         </main>
-        <SparringPanel
-          level={sparringContext.level}
-          containerId={sparringContext.containerId}
-          collapsed={sparCollapsed}
-          onToggleCollapsed={() => setSparCollapsed((value) => !value)}
-          onArchitectureUpdated={handleSparArchitectureUpdate}
-        />
+        {!sparCollapsed ? (
+          <ResizeHandle
+            side="right"
+            ariaLabel="Resize sparring panel"
+            onResize={handleSparResize}
+            onReset={resetSparWidth}
+          />
+        ) : null}
+        <div
+          className="workspace-panel workspace-panel-right"
+          style={{ width: sparCollapsed ? "auto" : sparWidth }}
+        >
+          <SparringPanel
+            level={sparringContext.level}
+            containerId={sparringContext.containerId}
+            collapsed={sparCollapsed}
+            onToggleCollapsed={() => setSparCollapsed((value) => !value)}
+            onArchitectureUpdated={handleSparArchitectureUpdate}
+          />
+        </div>
       </div>
     </div>
   );

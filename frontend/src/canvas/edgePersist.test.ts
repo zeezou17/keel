@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { ArchitectureFile } from "../api/client";
 import { createExpansionState } from "./expansion";
-import { buildEdgePersistRequest } from "./edgePersist";
+import { buildEdgeDeleteRequest, buildEdgePersistRequest, buildEdgeUpdateRequest, locateEdge } from "./edgePersist";
 
 const c1: ArchitectureFile = {
   schema_version: 1,
@@ -104,5 +104,83 @@ describe("buildEdgePersistRequest", () => {
       ok: false,
       error: "Links must connect nodes at the same C4 level.",
     });
+  });
+});
+
+describe("buildEdgeUpdateRequest", () => {
+  it("updates an existing C1 edge label", () => {
+    const withEdge: ArchitectureFile = {
+      ...c1,
+      edges: [
+        {
+          id: "edge_sys",
+          type: "dependency",
+          source_id: "sys_a",
+          target_id: "sys_b",
+          label: "Uses",
+        },
+      ],
+    };
+
+    const result = buildEdgeUpdateRequest(
+      "edge_sys",
+      "Calls API",
+      withEdge,
+      c2,
+      createExpansionState(),
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.request.architecture.edges[0].label).toBe("Calls API");
+  });
+});
+
+describe("buildEdgeDeleteRequest", () => {
+  it("removes an edge from C2 architecture", () => {
+    const withEdge: ArchitectureFile = {
+      ...c2,
+      edges: [
+        {
+          id: "edge_ctr",
+          type: "dependency",
+          source_id: "ctr_api",
+          target_id: "ctr_worker",
+          label: "Publishes to",
+        },
+      ],
+    };
+
+    const result = buildEdgeDeleteRequest(
+      "edge_ctr",
+      c1,
+      withEdge,
+      createExpansionState(),
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.request.architecture.edges).toHaveLength(0);
+  });
+});
+
+describe("locateEdge", () => {
+  it("finds edges in overview architecture", () => {
+    const overview: ArchitectureFile = {
+      ...c2,
+      edges: [
+        {
+          id: "edge_overview",
+          type: "dependency",
+          source_id: "ctr_api",
+          target_id: "ctr_worker",
+          label: "Uses",
+        },
+      ],
+    };
+
+    const location = locateEdge("edge_overview", c1, c2, createExpansionState(), overview);
+    expect(location?.edge.id).toBe("edge_overview");
+    expect(location?.level).toBe(2);
   });
 });

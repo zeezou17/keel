@@ -34,6 +34,133 @@ function makeEdgeId(sourceId: string, targetId: string): string {
   return `edge_${sourceId}_${targetId}_${stamp}`;
 }
 
+export interface EdgeLocation {
+  level: number;
+  architecture: ArchitectureFile;
+  containerId?: string | null;
+  edge: KeelEdge;
+}
+
+/** Find which architecture file owns an edge by id. */
+export function locateEdge(
+  edgeId: string,
+  c1Architecture: ArchitectureFile,
+  c2Architecture: ArchitectureFile | null,
+  expansionState: ExpansionState,
+  fullLevelArchitecture?: ArchitectureFile | null,
+): EdgeLocation | null {
+  if (fullLevelArchitecture) {
+    const edge = fullLevelArchitecture.edges.find((item) => item.id === edgeId);
+    if (edge) {
+      return {
+        level: fullLevelArchitecture.level,
+        architecture: fullLevelArchitecture,
+        containerId: fullLevelArchitecture.container_id ?? null,
+        edge,
+      };
+    }
+    return null;
+  }
+
+  const c1Edge = c1Architecture.edges.find((item) => item.id === edgeId);
+  if (c1Edge) {
+    return { level: 1, architecture: c1Architecture, edge: c1Edge };
+  }
+
+  const c2Edge = c2Architecture?.edges.find((item) => item.id === edgeId);
+  if (c2Edge && c2Architecture) {
+    return { level: 2, architecture: c2Architecture, edge: c2Edge };
+  }
+
+  for (const [containerId, architecture] of expansionState.childArchitectureCache) {
+    const edge = architecture.edges.find((item) => item.id === edgeId);
+    if (edge) {
+      return { level: 3, architecture, containerId, edge };
+    }
+  }
+
+  return null;
+}
+
+/** Build the architecture update for editing an edge label. */
+export function buildEdgeUpdateRequest(
+  edgeId: string,
+  label: string,
+  c1Architecture: ArchitectureFile,
+  c2Architecture: ArchitectureFile | null,
+  expansionState: ExpansionState,
+  fullLevelArchitecture?: ArchitectureFile | null,
+): EdgePersistResult {
+  const trimmedLabel = label.trim();
+  if (!trimmedLabel) {
+    return { ok: false, error: "Relationship label is required." };
+  }
+
+  const location = locateEdge(
+    edgeId,
+    c1Architecture,
+    c2Architecture,
+    expansionState,
+    fullLevelArchitecture,
+  );
+  if (!location) {
+    return { ok: false, error: "Edge not found." };
+  }
+
+  const nextEdge: KeelEdge = { ...location.edge, label: trimmedLabel };
+  const architecture: ArchitectureFile = {
+    ...location.architecture,
+    edges: location.architecture.edges.map((edge) =>
+      edge.id === edgeId ? nextEdge : edge,
+    ),
+  };
+
+  return {
+    ok: true,
+    request: {
+      level: location.level,
+      containerId: location.containerId,
+      architecture,
+      edge: nextEdge,
+    },
+  };
+}
+
+/** Build the architecture update for deleting an edge. */
+export function buildEdgeDeleteRequest(
+  edgeId: string,
+  c1Architecture: ArchitectureFile,
+  c2Architecture: ArchitectureFile | null,
+  expansionState: ExpansionState,
+  fullLevelArchitecture?: ArchitectureFile | null,
+): EdgePersistResult {
+  const location = locateEdge(
+    edgeId,
+    c1Architecture,
+    c2Architecture,
+    expansionState,
+    fullLevelArchitecture,
+  );
+  if (!location) {
+    return { ok: false, error: "Edge not found." };
+  }
+
+  const architecture: ArchitectureFile = {
+    ...location.architecture,
+    edges: location.architecture.edges.filter((edge) => edge.id !== edgeId),
+  };
+
+  return {
+    ok: true,
+    request: {
+      level: location.level,
+      containerId: location.containerId,
+      architecture,
+      edge: location.edge,
+    },
+  };
+}
+
 /** Build the architecture update for a new canvas edge. */
 export function buildEdgePersistRequest(
   sourceId: string,
