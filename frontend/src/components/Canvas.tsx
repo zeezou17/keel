@@ -25,7 +25,7 @@ import {
 import "@xyflow/react/dist/style.css";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import type { ArchitectureFile, KeelNode } from "../api/client";
+import type { ArchitectureFile, KeelEdge, KeelNode } from "../api/client";
 import type { ComposedEdge, ComposedNode, ExpansionState } from "../canvas/expansion";
 import { canNodeExpand } from "../canvas/expansion";
 import {
@@ -49,9 +49,11 @@ interface CanvasProps {
   expansionState?: ExpansionState;
   highlightedNodeIds?: string[];
   selectedNodeId?: string | null;
+  selectedEdgeId?: string | null;
   onArchitectureChange: (architecture: ArchitectureFile, level: number, containerId?: string | null) => void;
   onPersistPositions?: (flowNodes: Node[]) => void;
   onEdgeCreate?: (sourceId: string, targetId: string, label: string) => void;
+  onEdgeSelect?: (edge: KeelEdge | null) => void;
   onNodeSelect?: (node: KeelNode | null) => void;
   onNodeExpand?: (node: KeelNode) => void;
   onNodeCollapse?: (node: KeelNode) => void;
@@ -65,9 +67,11 @@ function CanvasInner({
   expansionState,
   highlightedNodeIds = [],
   selectedNodeId = null,
+  selectedEdgeId = null,
   onArchitectureChange,
   onPersistPositions,
   onEdgeCreate,
+  onEdgeSelect,
   onNodeSelect,
   onNodeExpand,
   onNodeCollapse,
@@ -209,13 +213,20 @@ function CanvasInner({
   }
 
   const buildEdges = useCallback((): Edge[] => {
-    const rootEdges = architecture.edges.map((edge) => ({
+    const mapEdge = (edge: KeelEdge, zIndex: number): Edge => ({
       id: edge.id,
       source: edge.source_id,
       target: edge.target_id,
       label: edge.label ?? edge.type,
-      style: { zIndex: 5 },
-    }));
+      style: {
+        zIndex,
+        stroke: edge.id === selectedEdgeId ? "#2a9d8f" : undefined,
+        strokeWidth: edge.id === selectedEdgeId ? 2.5 : undefined,
+      },
+      animated: edge.id === selectedEdgeId,
+    });
+
+    const rootEdges = architecture.edges.map((edge) => mapEdge(edge, 5));
 
     if (!composedEdges || !composedNodes || !expansionState) {
       return rootEdges;
@@ -232,19 +243,13 @@ function CanvasInner({
 
     const innerEdges = composedEdges
       .filter((edge) => visibleIds.has(edge.source_id) && visibleIds.has(edge.target_id))
-      .map((edge) => ({
-        id: edge.id,
-        source: edge.source_id,
-        target: edge.target_id,
-        label: edge.label ?? edge.type,
-        style: { zIndex: edge.depth > 1 ? 6 : 5 },
-      }));
+      .map((edge) => mapEdge(edge, edge.depth > 1 ? 6 : 5));
 
     const byId = new Map<string, Edge>();
     for (const edge of rootEdges) byId.set(edge.id, edge);
     for (const edge of innerEdges) byId.set(edge.id, edge);
     return [...byId.values()];
-  }, [architecture.edges, composedEdges, composedNodes, expansionState]);
+  }, [architecture.edges, composedEdges, composedNodes, expansionState, selectedEdgeId]);
 
   const edges = useMemo(() => buildEdges(), [buildEdges]);
 
@@ -469,10 +474,11 @@ function CanvasInner({
       if (flowNode.id.startsWith("group-")) return;
       const raw = (flowNode.data as { raw?: KeelNode }).raw;
       if (raw) {
+        onEdgeSelect?.(null);
         onNodeSelect?.(raw);
       }
     },
-    [onNodeSelect],
+    [onNodeSelect, onEdgeSelect],
   );
 
   const handleNodeDoubleClick = useCallback(
@@ -495,9 +501,29 @@ function CanvasInner({
     [expansionState, onNodeExpand, onNodeCollapse, onNodeDoubleClick],
   );
 
+  const onEdgeClick = useCallback(
+    (_event: React.MouseEvent, flowEdge: Edge) => {
+      const edge = architecture.edges.find((item) => item.id === flowEdge.id);
+      if (!edge && composedEdges) {
+        const composed = composedEdges.find((item) => item.id === flowEdge.id);
+        if (composed) {
+          onEdgeSelect?.(composed);
+          onNodeSelect?.(null);
+          return;
+        }
+      }
+      if (edge) {
+        onEdgeSelect?.(edge);
+        onNodeSelect?.(null);
+      }
+    },
+    [architecture.edges, composedEdges, onEdgeSelect, onNodeSelect],
+  );
+
   const onPaneClick = useCallback(() => {
     onNodeSelect?.(null);
-  }, [onNodeSelect]);
+    onEdgeSelect?.(null);
+  }, [onNodeSelect, onEdgeSelect]);
 
   return (
     <ReactFlow
@@ -506,6 +532,7 @@ function CanvasInner({
       nodeTypes={nodeTypes}
       onNodesChange={onNodesChange}
       onConnect={onConnect}
+      onEdgeClick={onEdgeClick}
       onNodeClick={onNodeClick}
       onNodeDoubleClick={handleNodeDoubleClick}
       onPaneClick={onPaneClick}
