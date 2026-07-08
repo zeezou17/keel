@@ -40,8 +40,10 @@ import {
   findAncestorsToExpand,
   nodeHasExpandableChildren,
   getSystemContainers,
+  getLegacyOrphanContainersForSystem,
 } from "./canvas/expansion";
 import { buildPositionPersistRequests } from "./canvas/persistPositions";
+import { buildEdgePersistRequest } from "./canvas/edgePersist";
 import type { NodeEmptyContext } from "./canvas/nodeEmpty";
 import { Canvas } from "./components/Canvas";
 import { NodeDetailPanel } from "./components/NodeDetailPanel";
@@ -354,6 +356,39 @@ export default function App() {
     [c1Architecture, c2Architecture, expansionState, persistArchitecture],
   );
 
+  const handleEdgeCreate = useCallback(
+    (sourceId: string, targetId: string, label: string) => {
+      if (!c1Architecture) return;
+
+      const result = buildEdgePersistRequest(
+        sourceId,
+        targetId,
+        label,
+        c1Architecture,
+        c2Architecture,
+        expansionState,
+        composedCanvas?.nodes,
+        fullLevelArchitecture,
+      );
+
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+
+      const { level, architecture, containerId } = result.request;
+      void persistArchitecture(architecture, level, containerId);
+    },
+    [
+      c1Architecture,
+      c2Architecture,
+      expansionState,
+      composedCanvas?.nodes,
+      fullLevelArchitecture,
+      persistArchitecture,
+    ],
+  );
+
   const handleCollapseAll = useCallback(() => {
     setExpansionState((prev) => collapseAll(prev));
     setFullLevelView(null);
@@ -419,6 +454,27 @@ export default function App() {
       position_x: position.x,
       position_y: position.y,
     };
+
+    let architectureForCreate = targetArchitecture;
+    if (level === 2 && parentId) {
+      const orphans = targetArchitecture.nodes.filter(
+        (existing) => existing.type === "container" && !existing.parent_id,
+      );
+      const legacyOrphans = getLegacyOrphanContainersForSystem(parentId, orphans, c1Architecture);
+      if (legacyOrphans.length > 0) {
+        const legacyIds = new Set(legacyOrphans.map((existing) => existing.id));
+        architectureForCreate = {
+          ...targetArchitecture,
+          nodes: targetArchitecture.nodes.map((existing) =>
+            legacyIds.has(existing.id) ? { ...existing, parent_id: parentId } : existing,
+          ),
+        };
+        await saveArchitecture(level, architectureForCreate, containerId);
+        if (level === 2) {
+          setC2Architecture(architectureForCreate);
+        }
+      }
+    }
 
     const updated = await createNode(level, node, containerId);
     
@@ -628,6 +684,7 @@ export default function App() {
             selectedNodeId={selectedNode?.id ?? null}
             onArchitectureChange={(next, level, containerId) => void persistArchitecture(next, level, containerId)}
             onPersistPositions={handlePersistPositions}
+            onEdgeCreate={handleEdgeCreate}
             onNodeSelect={(node) => setSelectedNode(node)}
             onNodeExpand={(node) => void handleNodeExpand(node)}
             onNodeCollapse={handleNodeCollapse}

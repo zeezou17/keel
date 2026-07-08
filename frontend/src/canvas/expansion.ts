@@ -186,6 +186,27 @@ export function getLegacyPrimarySystemId(c1Architecture: ArchitectureFile | null
   ).id;
 }
 
+/** Legacy C2 containers with no parent_id — assigned to a system by C1 topology rules. */
+export function getLegacyOrphanContainersForSystem(
+  systemId: string,
+  orphans: KeelNode[],
+  c1Architecture: ArchitectureFile | null,
+): KeelNode[] {
+  if (orphans.length === 0) return [];
+
+  const c1Systems = c1Architecture?.nodes.filter((n) => n.type === "system") ?? [];
+  if (c1Systems.length === 1 && c1Systems[0].id === systemId) {
+    return orphans;
+  }
+
+  const primarySystemId = getLegacyPrimarySystemId(c1Architecture);
+  if (primarySystemId === systemId) {
+    return orphans;
+  }
+
+  return [];
+}
+
 /** C2 containers that belong inline under an expanded system. */
 export function getSystemContainers(
   systemId: string,
@@ -195,24 +216,17 @@ export function getSystemContainers(
   if (!c2Architecture) return [];
 
   const c2Containers = c2Architecture.nodes.filter((n) => n.type === "container");
-  const hasParentIds = c2Containers.some((n) => n.parent_id);
-  if (hasParentIds) {
-    return c2Containers.filter((n) => n.parent_id === systemId);
-  }
+  if (c2Containers.length === 0) return [];
 
-  // Legacy files without parent_id
-  const c1Systems = c1Architecture?.nodes.filter((n) => n.type === "system") ?? [];
-  if (c1Systems.length === 1 && c1Systems[0].id === systemId) {
-    return c2Containers;
-  }
+  const explicit = c2Containers.filter((n) => n.parent_id === systemId);
+  const orphans = c2Containers.filter((n) => !n.parent_id);
+  const legacyOrphans = getLegacyOrphanContainersForSystem(systemId, orphans, c1Architecture);
 
-  // Multiple C1 systems: attach legacy containers to the most-connected (main) system
-  const primarySystemId = getLegacyPrimarySystemId(c1Architecture);
-  if (primarySystemId === systemId) {
-    return c2Containers;
+  const byId = new Map<string, KeelNode>();
+  for (const container of [...explicit, ...legacyOrphans]) {
+    byId.set(container.id, container);
   }
-
-  return [];
+  return [...byId.values()];
 }
 
 /** Whether a node actually has child architecture to show when expanded. */

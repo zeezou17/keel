@@ -7,5 +7,14 @@ export default defineConfig({
   build: {
     outDir: "../keel/static",
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          react: ["react", "react-dom"],
+          xyflow: ["@xyflow/react"],
+          markdown: ["react-markdown", "remark-gfm"],
+        },
+      },
+    },
   },
 });

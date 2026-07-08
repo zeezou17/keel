@@ -15,10 +15,10 @@ import {
   Controls,
   MiniMap,
   ReactFlow,
+  type Connection,
   type Node,
   type NodeChange,
   type Edge,
-  applyNodeChanges,
   useReactFlow,
   ReactFlowProvider,
 } from "@xyflow/react";
@@ -35,6 +35,7 @@ import {
   pushOverlappingNodes,
 } from "../canvas/layout";
 import { mergeWithLivePositions, rebuildGroupFrames } from "../canvas/groupFrames";
+import { applyNodeChangesWithChildFollow } from "../canvas/dragChildren";
 import { ExpandableNode, type ExpandableNodeData } from "./ExpandableNode";
 
 const nodeTypes = {
@@ -50,6 +51,7 @@ interface CanvasProps {
   selectedNodeId?: string | null;
   onArchitectureChange: (architecture: ArchitectureFile, level: number, containerId?: string | null) => void;
   onPersistPositions?: (flowNodes: Node[]) => void;
+  onEdgeCreate?: (sourceId: string, targetId: string, label: string) => void;
   onNodeSelect?: (node: KeelNode | null) => void;
   onNodeExpand?: (node: KeelNode) => void;
   onNodeCollapse?: (node: KeelNode) => void;
@@ -65,6 +67,7 @@ function CanvasInner({
   selectedNodeId = null,
   onArchitectureChange,
   onPersistPositions,
+  onEdgeCreate,
   onNodeSelect,
   onNodeExpand,
   onNodeCollapse,
@@ -417,7 +420,8 @@ function CanvasInner({
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => {
       setNodes((current) => {
-        const next = applyNodeChanges(changes, current);
+        const expandedIds = expansionState?.expandedNodeIds ?? new Set();
+        const next = applyNodeChangesWithChildFollow(changes, current, expandedIds);
 
         // Check if a drag finished
         const finishedDrag = changes.some(
@@ -425,7 +429,6 @@ function CanvasInner({
         );
 
         if (finishedDrag) {
-          const expandedIds = expansionState?.expandedNodeIds ?? new Set();
           const withUpdatedFrames = rebuildGroupFrames(next, expandedIds);
           persistPositions(withUpdatedFrames);
           return withUpdatedFrames;
@@ -437,7 +440,6 @@ function CanvasInner({
         );
 
         if (isDragging) {
-          const expandedIds = expansionState?.expandedNodeIds ?? new Set();
           return rebuildGroupFrames(next, expandedIds);
         }
 
@@ -445,6 +447,21 @@ function CanvasInner({
       });
     },
     [persistPositions, expansionState?.expandedNodeIds],
+  );
+
+  const onConnect = useCallback(
+    (connection: Connection) => {
+      if (!connection.source || !connection.target || !onEdgeCreate) return;
+      if (connection.source.startsWith("group-") || connection.target.startsWith("group-")) {
+        return;
+      }
+
+      const label = window.prompt("Describe this relationship:", "Uses");
+      if (label === null) return;
+
+      onEdgeCreate(connection.source, connection.target, label);
+    },
+    [onEdgeCreate],
   );
 
   const onNodeClick = useCallback(
@@ -488,6 +505,7 @@ function CanvasInner({
       edges={edges}
       nodeTypes={nodeTypes}
       onNodesChange={onNodesChange}
+      onConnect={onConnect}
       onNodeClick={onNodeClick}
       onNodeDoubleClick={handleNodeDoubleClick}
       onPaneClick={onPaneClick}

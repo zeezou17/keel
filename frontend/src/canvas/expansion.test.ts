@@ -7,6 +7,7 @@ import {
   expandNode,
   formatAddNodeLabel,
   getAddNodeContext,
+  getSystemContainers,
 } from "./expansion";
 
 const c1: ArchitectureFile = {
@@ -141,5 +142,67 @@ describe("formatAddNodeLabel", () => {
         focusName: "Payments",
       }),
     ).toBe("Add node (C2 · Payments)");
+  });
+});
+
+describe("getSystemContainers", () => {
+  it("keeps legacy orphan containers visible after a new linked container is added", () => {
+    const mixedC2: ArchitectureFile = {
+      schema_version: 1,
+      level: 2,
+      nodes: [
+        {
+          id: "ctr_legacy",
+          type: "container",
+          level: 2,
+          name: "Legacy API",
+          description: "",
+          paths: [],
+        },
+        {
+          id: "ctr_new",
+          type: "container",
+          level: 2,
+          name: "New Worker",
+          description: "",
+          paths: [],
+          parent_id: "sys_a",
+        },
+      ],
+      edges: [],
+    };
+
+    const containers = getSystemContainers("sys_a", mixedC2, c1);
+    expect(containers.map((node) => node.id).sort()).toEqual(["ctr_legacy", "ctr_new"]);
+  });
+
+  it("does not attach legacy orphans to unrelated systems", () => {
+    const mixedC2: ArchitectureFile = {
+      schema_version: 1,
+      level: 2,
+      nodes: [
+        {
+          id: "ctr_legacy",
+          type: "container",
+          level: 2,
+          name: "Legacy API",
+          description: "",
+          paths: [],
+        },
+        {
+          id: "ctr_new",
+          type: "container",
+          level: 2,
+          name: "Inventory API",
+          description: "",
+          paths: [],
+          parent_id: "sys_b",
+        },
+      ],
+      edges: [],
+    };
+
+    expect(getSystemContainers("sys_b", mixedC2, c1).map((node) => node.id)).toEqual(["ctr_new"]);
+    expect(getSystemContainers("sys_a", mixedC2, c1).map((node) => node.id)).toEqual(["ctr_legacy"]);
   });
 });
